@@ -41,7 +41,10 @@ function parseAuthCookie(value) {
     }
     if (!username) return null;
     const expected = signAuth(username, issuedAtStr);
-    const ok = crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+    const sigBuf = Buffer.from(sig);
+    const expBuf = Buffer.from(expected);
+    if (sigBuf.length !== expBuf.length) return null;
+    const ok = crypto.timingSafeEqual(sigBuf, expBuf);
     if (!ok) return null;
     if (Date.now() - issuedAt > AUTH_TTL_MS) return null;
     return { username, issuedAt };
