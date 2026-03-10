@@ -68,6 +68,21 @@ npm start
 
 The server will be available at `http://localhost:3000`
 
+## Deploying on Render
+
+On Render the filesystem is **ephemeral**: anything written to the app directory (including `data/app.db`) is lost on deploy or restart. To persist the database:
+
+1. **Add a Persistent Disk** to your Web Service in the Render dashboard:
+   - **Dashboard** → your service → **Disks** → **Add Disk**
+   - Name it (e.g. `data`) and set **Mount Path** to `/data`
+   - Save
+
+2. **Set the data directory** so the app uses the disk:
+   - **Environment** → add: `DATA_DIR` = `/data`
+   - Redeploy
+
+The SQLite database and any config will then be stored on the persistent disk and survive redeploys.
+
 ## Web Interface
 
 Once the server is running, visit `http://localhost:3000` in your browser to access the web interface:
