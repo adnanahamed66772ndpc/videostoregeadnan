@@ -83,6 +83,25 @@ On Render the filesystem is **ephemeral**: anything written to the app directory
 
 The SQLite database and any config will then be stored on the persistent disk and survive redeploys.
 
+### Render free tier: use Turso (no disk)
+
+On the **free tier** Render does not offer persistent disks. Use **Turso** (free SQLite-compatible database) so your settings persist without a disk:
+
+1. **Create a Turso database** at [turso.tech](https://turso.tech):
+   - Sign up, then create a new database (e.g. `r2-manager`).
+   - In the database’s **Connect** tab, copy the **URL** and create an **Auth Token**.
+
+2. **Set environment variables** on your Render service:
+   - `TURSO_DATABASE_URL` = your Turso URL (e.g. `libsql://r2-manager-yourname.turso.io`)
+   - `TURSO_AUTH_TOKEN` = your Turso auth token
+
+3. **Redeploy.** The app will use Turso instead of a local SQLite file; no persistent disk is required.
+
+### Troubleshooting deploy
+
+- **403 when cloning** – If the build log shows `status code: 403` when cloning from GitHub, the repo may be private or Render may have lost access. In Render: **Settings** → **Build & Deploy** → ensure the correct GitHub account/repo is connected and has access. If the deploy still completes (e.g. "Checking out commit..."), the 403 may be from cache download and can be ignored.
+- **npm vulnerabilities** – The project is kept updated; run `npm audit fix` if you see audit warnings after install.
+
 ## Web Interface
 
 Once the server is running, visit `http://localhost:3000` in your browser to access the web interface:

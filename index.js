@@ -73,8 +73,8 @@ function getAccountById(accounts, accountId) {
 
 const s3ClientCache = new Map();
 
-function getActiveBucket() {
-    const { accounts, buckets, activeBucketId } = loadBucketsConfig();
+async function getActiveBucket() {
+    const { accounts, buckets, activeBucketId } = await loadBucketsConfig();
     if (!activeBucketId) return null;
     const bucket = buckets.find((b) => b.id === activeBucketId);
     if (!bucket) return null;
@@ -103,10 +103,10 @@ function getS3Client(account) {
     return client;
 }
 
-function getActiveS3AndBucket() {
-    const bucket = getActiveBucket();
+async function getActiveS3AndBucket() {
+    const bucket = await getActiveBucket();
     if (!bucket) return { s3: null, bucketName: null, bucket };
-    const { accounts } = loadBucketsConfig();
+    const { accounts } = await loadBucketsConfig();
     const account = getAccountById(accounts, bucket.accountId);
     return {
         s3: getS3Client(account),
@@ -147,7 +147,7 @@ app.get("/health", (req, res) => {
 // Bucket status - R2 connectivity (uses active bucket)
 app.get("/bucket-status", async (req, res) => {
     res.setHeader("Content-Type", "application/json");
-    const { s3, bucketName } = getActiveS3AndBucket();
+    const { s3, bucketName } = await getActiveS3AndBucket();
     if (!s3 || !bucketName) {
         return res.status(503).json({
             status: "error",
@@ -169,7 +169,7 @@ app.get("/bucket-status", async (req, res) => {
 
 // 1. Create a file inside a folder
 app.post("/create-file", async (req, res) => {
-    const { s3, bucketName } = getActiveS3AndBucket();
+    const { s3, bucketName } = await getActiveS3AndBucket();
     if (!s3 || !bucketName) return res.status(503).send({ error: "No bucket selected. Add one in Settings → Buckets." });
     const { folder, fileName, content } = req.body;
     const params = {
@@ -188,7 +188,7 @@ app.post("/create-file", async (req, res) => {
 
 // 2. Delete a file inside a folder
 app.delete("/delete-file", async (req, res) => {
-    const { s3, bucketName } = getActiveS3AndBucket();
+    const { s3, bucketName } = await getActiveS3AndBucket();
     if (!s3 || !bucketName) return res.status(503).send({ error: "No bucket selected." });
     const { folder, fileName, fileNames } = req.body;
     try {
@@ -227,7 +227,7 @@ app.delete("/delete-file", async (req, res) => {
 
 // 3. Update a file inside a folder (overwrite)
 app.put("/update-file", async (req, res) => {
-    const { s3, bucketName } = getActiveS3AndBucket();
+    const { s3, bucketName } = await getActiveS3AndBucket();
     if (!s3 || !bucketName) return res.status(503).send({ error: "No bucket selected." });
     const { folder, fileName, content } = req.body;
     try {
@@ -240,7 +240,7 @@ app.put("/update-file", async (req, res) => {
 
 // 4. Read a file inside a folder
 app.get("/read-file", async (req, res) => {
-    const { s3, bucketName } = getActiveS3AndBucket();
+    const { s3, bucketName } = await getActiveS3AndBucket();
     if (!s3 || !bucketName) return res.status(503).send({ error: "No bucket selected." });
     const { folder, fileName } = req.query;
     try {
@@ -254,7 +254,7 @@ app.get("/read-file", async (req, res) => {
 
 // 5. List files inside a folder or root
 app.get("/list-files", async (req, res) => {
-    const { s3, bucketName } = getActiveS3AndBucket();
+    const { s3, bucketName } = await getActiveS3AndBucket();
     if (!s3 || !bucketName) return res.status(503).send({ error: "No bucket selected." });
     const { folder } = req.query;
     const params = { Bucket: bucketName, Prefix: folder ? `${folder}/` : "", Delimiter: "/" };
@@ -268,7 +268,7 @@ app.get("/list-files", async (req, res) => {
 
 // 6. List all folders
 app.get("/list-folders", async (req, res) => {
-    const { s3, bucketName } = getActiveS3AndBucket();
+    const { s3, bucketName } = await getActiveS3AndBucket();
     if (!s3 || !bucketName) return res.status(503).send({ error: "No bucket selected." });
     try {
         const data = await s3.send(new ListObjectsV2Command({ Bucket: bucketName, Delimiter: "/" }));
@@ -280,7 +280,7 @@ app.get("/list-folders", async (req, res) => {
 
 // 7. Duplicate a folder
 app.post("/duplicate-folder", async (req, res) => {
-    const { s3, bucketName } = getActiveS3AndBucket();
+    const { s3, bucketName } = await getActiveS3AndBucket();
     if (!s3 || !bucketName) return res.status(503).send({ error: "No bucket selected." });
     const { sourceFolder, targetFolder } = req.body;
     try {
@@ -298,7 +298,7 @@ app.post("/duplicate-folder", async (req, res) => {
 
 // 8. Rename a folder
 app.put("/rename-folder", async (req, res) => {
-    const { s3, bucketName } = getActiveS3AndBucket();
+    const { s3, bucketName } = await getActiveS3AndBucket();
     if (!s3 || !bucketName) return res.status(503).send({ error: "No bucket selected." });
     const { sourceFolder, targetFolder } = req.body;
     try {
@@ -329,7 +329,7 @@ app.post(
         });
     },
     async (req, res) => {
-        const { s3, bucketName } = getActiveS3AndBucket();
+        const { s3, bucketName } = await getActiveS3AndBucket();
         if (!s3 || !bucketName) return res.status(503).send({ error: "No bucket selected." });
         const folder = req.body.folder || "uploads";
         const files = req.files;
@@ -344,10 +344,10 @@ app.post(
 );
 
 // --- Buckets API (one account, multiple buckets) ---
-app.get("/api/accounts", (req, res) => {
+app.get("/api/accounts", async (req, res) => {
     res.setHeader("Content-Type", "application/json");
     try {
-        const config = loadBucketsConfig();
+        const config = await loadBucketsConfig();
         const accounts = Array.isArray(config.accounts) ? config.accounts : [];
         res.status(200).json({ accounts: accounts.map((a) => ({ id: a.id, label: a.label, endpoint: a.endpoint })) });
     } catch (err) {
@@ -356,7 +356,7 @@ app.get("/api/accounts", (req, res) => {
     }
 });
 
-app.post("/api/accounts", (req, res) => {
+app.post("/api/accounts", async (req, res) => {
     res.setHeader("Content-Type", "application/json");
     const { label, endpoint, accessKeyId, secretAccessKey } = req.body || {};
     if (!label || !endpoint || !accessKeyId || !secretAccessKey) {
@@ -364,28 +364,28 @@ app.post("/api/accounts", (req, res) => {
     }
     try {
         const id = require("crypto").randomUUID();
-        runAndPersist("INSERT INTO accounts (id, label, endpoint, access_key_id, secret_access_key) VALUES (?, ?, ?, ?, ?)", [id, label, endpoint, accessKeyId, secretAccessKey]);
+        await runAndPersist("INSERT INTO accounts (id, label, endpoint, access_key_id, secret_access_key) VALUES (?, ?, ?, ?, ?)", [id, label, endpoint, accessKeyId, secretAccessKey]);
         res.status(201).json({ id, label, endpoint });
     } catch (err) {
         res.status(500).json({ error: err.message || "Failed to add account" });
     }
 });
 
-app.delete("/api/accounts/:id", (req, res) => {
+app.delete("/api/accounts/:id", async (req, res) => {
     res.setHeader("Content-Type", "application/json");
     const { id } = req.params;
     try {
-        const acc = getOne("SELECT id FROM accounts WHERE id = ?", [id]);
+        const acc = await getOne("SELECT id FROM accounts WHERE id = ?", [id]);
         if (!acc) return res.status(404).json({ error: "Account not found" });
-        const activeRow = getOne("SELECT value FROM settings WHERE key = ?", ["activeBucketId"]);
-        const bucketsOfAccount = getAll("SELECT id FROM buckets WHERE account_id = ?", [id]);
+        const activeRow = await getOne("SELECT value FROM settings WHERE key = ?", ["activeBucketId"]);
+        const bucketsOfAccount = await getAll("SELECT id FROM buckets WHERE account_id = ?", [id]);
         const activeBucketId = activeRow ? activeRow.value : null;
         const activeWasInAccount = activeBucketId && bucketsOfAccount.some((b) => b.id === activeBucketId);
-        runAndPersist("DELETE FROM buckets WHERE account_id = ?", [id]);
-        runAndPersist("DELETE FROM accounts WHERE id = ?", [id]);
+        await runAndPersist("DELETE FROM buckets WHERE account_id = ?", [id]);
+        await runAndPersist("DELETE FROM accounts WHERE id = ?", [id]);
         if (activeWasInAccount) {
-            const firstRemaining = getOne("SELECT id FROM buckets LIMIT 1");
-            runAndPersist("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["activeBucketId", firstRemaining ? firstRemaining.id : null]);
+            const firstRemaining = await getOne("SELECT id FROM buckets LIMIT 1");
+            await runAndPersist("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["activeBucketId", firstRemaining ? firstRemaining.id : null]);
         }
         s3ClientCache.delete(id);
         res.status(200).json({ message: "Account removed" });
@@ -394,10 +394,10 @@ app.delete("/api/accounts/:id", (req, res) => {
     }
 });
 
-app.get("/api/buckets", (req, res) => {
+app.get("/api/buckets", async (req, res) => {
     res.setHeader("Content-Type", "application/json");
     try {
-        const config = loadBucketsConfig();
+        const config = await loadBucketsConfig();
         const accounts = Array.isArray(config.accounts) ? config.accounts : [];
         const buckets = Array.isArray(config.buckets) ? config.buckets : [];
         const activeBucketId = config.activeBucketId || null;
@@ -423,26 +423,26 @@ app.get("/api/buckets", (req, res) => {
     }
 });
 
-app.get("/api/buckets/active", (req, res) => {
+app.get("/api/buckets/active", async (req, res) => {
     res.setHeader("Content-Type", "application/json");
-    const bucket = getActiveBucket();
+    const bucket = await getActiveBucket();
     if (!bucket) return res.status(200).json({ active: null });
     res.status(200).json({ active: { id: bucket.id, label: bucket.label, bucketName: bucket.bucketName } });
 });
 
-app.post("/api/buckets", (req, res) => {
+app.post("/api/buckets", async (req, res) => {
     res.setHeader("Content-Type", "application/json");
     const { accountId, bucketName, label } = req.body || {};
     if (!accountId || !bucketName) return res.status(400).json({ error: "Missing: accountId, bucketName" });
     try {
-        const acc = getOne("SELECT id FROM accounts WHERE id = ?", [accountId]);
+        const acc = await getOne("SELECT id FROM accounts WHERE id = ?", [accountId]);
         if (!acc) return res.status(404).json({ error: "Account not found" });
         const id = require("crypto").randomUUID();
         const labelVal = label || bucketName;
-        runAndPersist("INSERT INTO buckets (id, account_id, bucket_name, label) VALUES (?, ?, ?, ?)", [id, accountId, bucketName, labelVal]);
-        const activeRow = getOne("SELECT value FROM settings WHERE key = ?", ["activeBucketId"]);
+        await runAndPersist("INSERT INTO buckets (id, account_id, bucket_name, label) VALUES (?, ?, ?, ?)", [id, accountId, bucketName, labelVal]);
+        const activeRow = await getOne("SELECT value FROM settings WHERE key = ?", ["activeBucketId"]);
         if (!activeRow || !activeRow.value) {
-            runAndPersist("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["activeBucketId", id]);
+            await runAndPersist("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["activeBucketId", id]);
         }
         res.status(201).json({ id, accountId, bucketName, label: labelVal, isActive: !activeRow || !activeRow.value });
     } catch (err) {
@@ -450,30 +450,30 @@ app.post("/api/buckets", (req, res) => {
     }
 });
 
-app.put("/api/buckets/active", (req, res) => {
+app.put("/api/buckets/active", async (req, res) => {
     res.setHeader("Content-Type", "application/json");
     const { id } = req.body || {};
     try {
-        const b = getOne("SELECT id FROM buckets WHERE id = ?", [id]);
+        const b = await getOne("SELECT id FROM buckets WHERE id = ?", [id]);
         if (!b) return res.status(404).json({ error: "Bucket not found" });
-        runAndPersist("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["activeBucketId", id]);
+        await runAndPersist("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["activeBucketId", id]);
         res.status(200).json({ activeBucketId: id });
     } catch (err) {
         res.status(500).json({ error: err.message || "Failed to set active bucket" });
     }
 });
 
-app.delete("/api/buckets/:id", (req, res) => {
+app.delete("/api/buckets/:id", async (req, res) => {
     res.setHeader("Content-Type", "application/json");
     const { id } = req.params;
     try {
-        const b = getOne("SELECT id FROM buckets WHERE id = ?", [id]);
+        const b = await getOne("SELECT id FROM buckets WHERE id = ?", [id]);
         if (!b) return res.status(404).json({ error: "Bucket not found" });
-        const activeRow = getOne("SELECT value FROM settings WHERE key = ?", ["activeBucketId"]);
-        runAndPersist("DELETE FROM buckets WHERE id = ?", [id]);
+        const activeRow = await getOne("SELECT value FROM settings WHERE key = ?", ["activeBucketId"]);
+        await runAndPersist("DELETE FROM buckets WHERE id = ?", [id]);
         if (activeRow && activeRow.value === id) {
-            const first = getOne("SELECT id FROM buckets LIMIT 1");
-            runAndPersist("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["activeBucketId", first ? first.id : null]);
+            const first = await getOne("SELECT id FROM buckets LIMIT 1");
+            await runAndPersist("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["activeBucketId", first ? first.id : null]);
         }
         res.status(200).json({ message: "Bucket removed" });
     } catch (err) {
@@ -483,7 +483,7 @@ app.delete("/api/buckets/:id", (req, res) => {
 
 // Get single file signed URL (for preview / download)
 app.get("/get-file-url", async (req, res) => {
-    const { s3, bucketName } = getActiveS3AndBucket();
+    const { s3, bucketName } = await getActiveS3AndBucket();
     if (!s3 || !bucketName) return res.status(503).json({ error: "No bucket selected." });
     const { key, expires } = req.query;
     if (!key) return res.status(400).json({ error: "Missing key." });
@@ -498,7 +498,7 @@ app.get("/get-file-url", async (req, res) => {
 
 // 10. Get URLs for files inside a folder or root
 app.get("/get-file-urls", async (req, res) => {
-    const { s3, bucketName } = getActiveS3AndBucket();
+    const { s3, bucketName } = await getActiveS3AndBucket();
     if (!s3 || !bucketName) return res.status(503).send({ error: "No bucket selected." });
     const { folder, expires } = req.query;
     try {
