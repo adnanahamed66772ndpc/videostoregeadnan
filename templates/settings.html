@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings — R2 File Manager</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+                    colors: {
+                        primary: { 50: '#eff6ff', 100: '#dbeafe', 200: '#bfdbfe', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8' },
+                    },
+                    borderRadius: { xl: '0.75rem', '2xl': '1rem' },
+                    boxShadow: { 'soft': '0 1px 3px 0 rgb(0 0 0 / 0.05), 0 1px 2px -1px rgb(0 0 0 / 0.05)' },
+                }
+            }
+        };
+    </script>
+    <script src="https://unpkg.com/feather-icons/dist/feather.min.js"></script>
+    <style>
+        button:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+        .settings-tab.active { color: #2563eb; border-color: #2563eb; }
+    </style>
+</head>
+
+<body class="bg-gray-50 min-h-screen font-sans antialiased text-gray-900">
+    <!-- Header -->
+    <header class="bg-white border-b border-gray-200 sticky top-0 z-30">
+        <div class="max-w-6xl mx-auto px-6 py-4">
+            <div class="flex items-center justify-between">
+                <a href="/" class="text-2xl font-semibold text-gray-900 tracking-tight hover:text-gray-700 transition flex items-center gap-3">
+                    <span class="text-gray-400">←</span>
+                    R2 File Manager
+                </a>
+                <div class="flex items-center gap-2">
+                    <span class="text-sm font-medium text-gray-500 flex items-center gap-2">
+                        <i data-feather="settings" class="w-4 h-4"></i>
+                        Settings
+                    </span>
+                    <a href="/logout" class="text-sm font-medium text-gray-500 hover:text-gray-700 flex items-center gap-1.5 transition">
+                        <i data-feather="log-out" class="w-4 h-4"></i>
+                        Logout
+                    </a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-6xl mx-auto px-6 py-8">
+        <div class="mb-8">
+            <h1 class="text-2xl font-semibold text-gray-900">Settings</h1>
+            <p class="text-gray-500 mt-1">Check server and bucket status.</p>
+        </div>
+
+        <div class="bg-white rounded-2xl border border-gray-200 shadow-soft overflow-hidden">
+            <!-- Tabs -->
+            <div class="flex border-b border-gray-200">
+                <button id="settings-tab-buckets" onclick="switchTab('buckets')"
+                    class="settings-tab active px-6 py-4 text-sm font-medium border-b-2 -mb-px text-primary-600 border-primary-600">
+                    Buckets
+                </button>
+                <button id="settings-tab-server" onclick="switchTab('server')"
+                    class="settings-tab px-6 py-4 text-sm font-medium border-b-2 -mb-px border-transparent text-gray-500 hover:text-gray-700">
+                    Server status
+                </button>
+                <button id="settings-tab-bucket" onclick="switchTab('bucket')"
+                    class="settings-tab px-6 py-4 text-sm font-medium border-b-2 -mb-px border-transparent text-gray-500 hover:text-gray-700">
+                    Bucket status
+                </button>
+            </div>
+
+            <div class="p-8">
+                <!-- Buckets panel: one account, multiple buckets -->
+                <div id="panel-buckets" class="settings-panel">
+                    <p class="text-sm text-gray-500 mb-4">Add one or more Cloudflare accounts (different Account IDs = different endpoints). Each account can have multiple R2 buckets. The active bucket is used for file operations. Endpoint format: <code class="bg-gray-200 px-1 rounded">https://&lt;ACCOUNT_ID&gt;.r2.cloudflarestorage.com</code></p>
+                    <div class="mb-6 p-4 rounded-xl border border-gray-200 bg-gray-50">
+                        <h3 class="text-sm font-semibold text-gray-900 mb-3">Add Cloudflare account</h3>
+                        <div class="grid gap-3">
+                            <input type="text" id="account-label" placeholder="Account label (e.g. My Cloudflare)" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                            <input type="text" id="account-endpoint" placeholder="R2 endpoint (https://ACCOUNT_ID.r2.cloudflarestorage.com)" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                            <input type="text" id="account-access-key" placeholder="Access Key ID" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                            <input type="password" id="account-secret-key" placeholder="Secret Access Key" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                            <button type="button" onclick="addAccount()" id="btn-add-account" class="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-gray-900 hover:bg-gray-800 rounded-lg transition w-fit">
+                                <i data-feather="plus" class="w-4 h-4"></i> Add account
+                            </button>
+                        </div>
+                        <p id="account-form-msg" class="text-sm mt-2 hidden"></p>
+                    </div>
+                    <h3 class="text-sm font-semibold text-gray-900 mb-2">Accounts & buckets</h3>
+                    <div id="buckets-list" class="space-y-4">
+                        <p class="text-sm text-gray-500">Loading…</p>
+                    </div>
+                </div>
+
+                <!-- Server status panel -->
+                <div id="panel-server" class="settings-panel hidden">
+                    <p class="text-sm text-gray-500 mb-4">Check if the API server is running and responding.</p>
+                    <button onclick="checkServerStatus()" id="btn-server"
+                        class="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-gray-900 hover:bg-gray-800 rounded-lg transition">
+                        <i data-feather="activity" class="w-4 h-4"></i>
+                        Check server
+                    </button>
+                    <div id="server-result" class="mt-4 hidden">
+                        <div class="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-2">
+                            <div id="server-text" class="font-medium"></div>
+                            <div id="server-detail" class="text-sm text-gray-600"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bucket status panel -->
+                <div id="panel-bucket" class="settings-panel hidden">
+                    <p class="text-sm text-gray-500 mb-4">Check if the R2 bucket is reachable and credentials are valid.</p>
+                    <button onclick="checkBucketStatus()" id="btn-bucket"
+                        class="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-gray-900 hover:bg-gray-800 rounded-lg transition">
+                        <i data-feather="database" class="w-4 h-4"></i>
+                        Check bucket
+                    </button>
+                    <div id="bucket-result" class="mt-4 hidden">
+                        <div class="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-2">
+                            <div id="bucket-text" class="font-medium"></div>
+                            <div id="bucket-detail" class="text-sm text-gray-600"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        (function() {
+            var origFetch = window.fetch;
+            window.fetch = function(url, opts) {
+                opts = opts || {};
+                opts.credentials = opts.credentials || 'include';
+                return origFetch.call(window, url, opts).then(function(r) {
+                    if (r.status === 401) { window.location.href = '/login'; }
+                    return r;
+                });
+            };
+        })();
+        function switchTab(tab) {
+            document.querySelectorAll('.settings-tab').forEach(t => {
+                t.classList.remove('active', 'text-primary-600', 'border-primary-600');
+                t.classList.add('border-transparent', 'text-gray-500');
+            });
+            document.querySelectorAll('.settings-panel').forEach(p => p.classList.add('hidden'));
+
+            if (tab === 'buckets') {
+                document.getElementById('settings-tab-buckets').classList.add('active', 'text-primary-600', 'border-primary-600');
+                document.getElementById('settings-tab-buckets').classList.remove('border-transparent', 'text-gray-500');
+                document.getElementById('panel-buckets').classList.remove('hidden');
+                loadBucketsList();
+            } else if (tab === 'server') {
+                document.getElementById('settings-tab-server').classList.add('active', 'text-primary-600', 'border-primary-600');
+                document.getElementById('settings-tab-server').classList.remove('border-transparent', 'text-gray-500');
+                document.getElementById('panel-server').classList.remove('hidden');
+            } else {
+                document.getElementById('settings-tab-bucket').classList.add('active', 'text-primary-600', 'border-primary-600');
+                document.getElementById('settings-tab-bucket').classList.remove('border-transparent', 'text-gray-500');
+                document.getElementById('panel-bucket').classList.remove('hidden');
+            }
+        }
+
+        async function loadBucketsList() {
+            const el = document.getElementById('buckets-list');
+            try {
+                const res = await fetch('/api/buckets');
+                const contentType = res.headers.get('content-type') || '';
+                let data = { accounts: [], buckets: [], activeBucketId: null };
+                if (contentType.includes('application/json')) {
+                    try {
+                        data = await res.json();
+                    } catch (_) {
+                        el.innerHTML = '<p class="text-sm text-red-600">Invalid response from server.</p>';
+                        return;
+                    }
+                }
+                if (!res.ok) {
+                    el.innerHTML = '<p class="text-sm text-red-600">' + escapeHtml(data.error || 'Error ' + res.status) + '</p>';
+                    return;
+                }
+                const accounts = Array.isArray(data.accounts) ? data.accounts : [];
+                const buckets = Array.isArray(data.buckets) ? data.buckets : [];
+                if (accounts.length === 0) {
+                    el.innerHTML = '<p class="text-sm text-gray-500">No account yet. Add your Cloudflare account above.</p>';
+                    return;
+                }
+                let html = '';
+                accounts.forEach(acc => {
+                    const accBuckets = buckets.filter(b => b.accountId === acc.id);
+                    html += `
+                    <div class="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                        <div class="flex items-center justify-between p-3 bg-gray-50 border-b border-gray-200">
+                            <span class="font-medium text-gray-900">${escapeHtml(acc.label)}</span>
+                            <button type="button" onclick="removeAccount('${acc.id}')" class="text-sm font-medium text-red-600 hover:text-red-700">Remove account</button>
+                        </div>
+                        <div class="p-3">
+                            <div class="flex flex-wrap items-center gap-2 mb-2">
+                                <input type="text" id="new-bucket-name-${acc.id}" placeholder="Bucket name" class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-40">
+                                <input type="text" id="new-bucket-label-${acc.id}" placeholder="Label (optional)" class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-32">
+                                <button type="button" onclick="addBucket('${acc.id}')" class="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg">+ Add bucket</button>
+                            </div>
+                            <div class="space-y-1">
+                                ${accBuckets.length === 0 ? '<p class="text-xs text-gray-500">No buckets. Add one above.</p>' : accBuckets.map(b => `
+                                    <div class="flex items-center justify-between py-2 px-2 rounded-lg hover:bg-gray-50 gap-2">
+                                        <div class="flex items-center gap-2 min-w-0">
+                                            <span class="text-sm font-medium text-gray-900">${escapeHtml(b.label || b.bucketName)}</span>
+                                            <span class="text-gray-500 text-xs truncate">${escapeHtml(b.bucketName)}</span>
+                                            ${b.isActive ? '<span class="text-xs font-medium text-primary-600 bg-primary-50 px-2 py-0.5 rounded flex-shrink-0">Active</span>' : ''}
+                                        </div>
+                                        <div class="flex gap-2 flex-shrink-0">
+                                            ${!b.isActive ? `<button type="button" onclick="setActiveBucket('${b.id}')" class="text-sm text-primary-600 hover:underline">Use</button>` : ''}
+                                            <button type="button" onclick="removeBucket('${b.id}')" class="text-sm text-red-600 hover:underline">Remove</button>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>`;
+                });
+                el.innerHTML = html;
+            } catch (e) {
+                el.innerHTML = '<p class="text-sm text-red-600">Failed to load. ' + escapeHtml(e.message || String(e)) + '</p>';
+            }
+        }
+
+        function escapeHtml(s) {
+            if (!s) return '';
+            const div = document.createElement('div');
+            div.textContent = s;
+            return div.innerHTML;
+        }
+
+        async function addAccount() {
+            const msg = document.getElementById('account-form-msg');
+            const label = document.getElementById('account-label').value.trim();
+            const endpoint = document.getElementById('account-endpoint').value.trim();
+            const accessKeyId = document.getElementById('account-access-key').value.trim();
+            const secretAccessKey = document.getElementById('account-secret-key').value.trim();
+            if (!label || !endpoint || !accessKeyId || !secretAccessKey) {
+                msg.textContent = 'Fill all fields.';
+                msg.className = 'text-sm mt-2 text-red-600';
+                msg.classList.remove('hidden');
+                return;
+            }
+            const r2EndpointRe = /^https:\/\/[^/]+\.r2\.cloudflarestorage\.com\/?$/i;
+            if (!r2EndpointRe.test(endpoint.replace(/\/$/, ''))) {
+                msg.textContent = 'Endpoint must be https://<ACCOUNT_ID>.r2.cloudflarestorage.com';
+                msg.className = 'text-sm mt-2 text-red-600';
+                msg.classList.remove('hidden');
+                return;
+            }
+            const btn = document.getElementById('btn-add-account');
+            btn.disabled = true;
+            msg.classList.add('hidden');
+            try {
+                const res = await fetch('/api/accounts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ label, endpoint, accessKeyId, secretAccessKey })
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    msg.textContent = data.error || 'Failed to add account';
+                    msg.className = 'text-sm mt-2 text-red-600';
+                    msg.classList.remove('hidden');
+                    return;
+                }
+                document.getElementById('account-label').value = '';
+                document.getElementById('account-endpoint').value = '';
+                document.getElementById('account-access-key').value = '';
+                document.getElementById('account-secret-key').value = '';
+                msg.textContent = 'Account added. Now add buckets below.';
+                msg.className = 'text-sm mt-2 text-green-600';
+                msg.classList.remove('hidden');
+                loadBucketsList();
+            } catch (e) {
+                msg.textContent = 'Request failed.';
+                msg.className = 'text-sm mt-2 text-red-600';
+                msg.classList.remove('hidden');
+            }
+            btn.disabled = false;
+        }
+
+        async function addBucket(accountId) {
+            const nameEl = document.getElementById('new-bucket-name-' + accountId);
+            const labelEl = document.getElementById('new-bucket-label-' + accountId);
+            const bucketName = (nameEl && nameEl.value) ? nameEl.value.trim() : '';
+            const label = (labelEl && labelEl.value) ? labelEl.value.trim() : '';
+            if (!bucketName) return;
+            try {
+                const res = await fetch('/api/buckets', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ accountId, bucketName, label: label || bucketName })
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    alert(data.error || 'Failed to add bucket');
+                    return;
+                }
+                if (nameEl) nameEl.value = '';
+                if (labelEl) labelEl.value = '';
+                loadBucketsList();
+            } catch (e) {
+                alert('Request failed.');
+            }
+        }
+
+        async function removeAccount(id) {
+            if (!confirm('Remove this account and all its buckets?')) return;
+            try {
+                await fetch('/api/accounts/' + encodeURIComponent(id), { method: 'DELETE' });
+                loadBucketsList();
+            } catch (e) {}
+        }
+
+        async function setActiveBucket(id) {
+            try {
+                await fetch('/api/buckets/active', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+                loadBucketsList();
+            } catch (e) {}
+        }
+
+        async function removeBucket(id) {
+            if (!confirm('Remove this bucket? Credentials will be deleted from this app.')) return;
+            try {
+                await fetch('/api/buckets/' + encodeURIComponent(id), { method: 'DELETE' });
+                loadBucketsList();
+            } catch (e) {}
+        }
+
+        async function checkServerStatus() {
+            const btn = document.getElementById('btn-server');
+            const resultEl = document.getElementById('server-result');
+            const textEl = document.getElementById('server-text');
+            const detailEl = document.getElementById('server-detail');
+
+            btn.disabled = true;
+            btn.innerHTML = '<i data-feather="loader" class="w-4 h-4 animate-spin"></i> Checking...';
+            feather.replace();
+            resultEl.classList.add('hidden');
+
+            const start = Date.now();
+            try {
+                const res = await fetch('/health');
+                const contentType = res.headers.get('content-type') || '';
+                let data = {};
+                if (contentType.includes('application/json')) {
+                    data = await res.json();
+                } else {
+                    const text = await res.text();
+                    throw new Error(text.slice(0, 80) ? 'Server returned non-JSON. Is the API running?' : 'HTTP ' + res.status);
+                }
+                const ms = Date.now() - start;
+
+                if (res.ok) {
+                    const uptimeSec = Math.floor(data.uptime || 0);
+                    const uptimeStr = uptimeSec < 60 ? uptimeSec + 's' : Math.floor(uptimeSec / 60) + 'm ' + (uptimeSec % 60) + 's';
+                    textEl.textContent = 'Server is online';
+                    textEl.className = 'font-medium text-green-700';
+                    detailEl.textContent = 'Response: ' + ms + 'ms · Uptime: ' + uptimeStr;
+                    detailEl.className = 'text-sm text-gray-600';
+                } else {
+                    textEl.textContent = 'Server error';
+                    textEl.className = 'font-medium text-red-700';
+                    detailEl.textContent = data.message || 'HTTP ' + res.status;
+                    detailEl.className = 'text-sm text-red-600';
+                }
+            } catch (err) {
+                textEl.textContent = 'Server offline';
+                textEl.className = 'font-medium text-red-700';
+                detailEl.textContent = err.message || 'Could not reach server. Run: npm start';
+                detailEl.className = 'text-sm text-red-600';
+            }
+
+            resultEl.classList.remove('hidden');
+            btn.disabled = false;
+            btn.innerHTML = '<i data-feather="activity" class="w-4 h-4"></i> Check server';
+            feather.replace();
+        }
+
+        async function checkBucketStatus() {
+            const btn = document.getElementById('btn-bucket');
+            const resultEl = document.getElementById('bucket-result');
+            const textEl = document.getElementById('bucket-text');
+            const detailEl = document.getElementById('bucket-detail');
+
+            btn.disabled = true;
+            btn.innerHTML = '<i data-feather="loader" class="w-4 h-4 animate-spin"></i> Checking...';
+            feather.replace();
+            resultEl.classList.add('hidden');
+
+            try {
+                const res = await fetch('/bucket-status');
+                const contentType = res.headers.get('content-type') || '';
+                let data = {};
+                if (contentType.includes('application/json')) {
+                    try {
+                        data = await res.json();
+                    } catch (e) {
+                        throw new Error('Invalid JSON. Restart the Node server (npm start) and try again.');
+                    }
+                } else {
+                    throw new Error('Server returned HTML. Use the Node server (npm start) and open http://localhost:3000');
+                }
+
+                if (res.ok && data.status === 'ok') {
+                    textEl.textContent = 'Bucket connected';
+                    textEl.className = 'font-medium text-green-700';
+                    detailEl.innerHTML = 'Bucket: <code class="bg-gray-200 px-1.5 py-0.5 rounded text-xs">' + (data.bucket || '—') + '</code>';
+                    detailEl.className = 'text-sm text-gray-600';
+                } else {
+                    textEl.textContent = 'Bucket error';
+                    textEl.className = 'font-medium text-red-700';
+                    detailEl.textContent = data.message || 'Connection failed';
+                    detailEl.className = 'text-sm text-red-600';
+                }
+            } catch (err) {
+                textEl.textContent = 'Bucket unreachable';
+                textEl.className = 'font-medium text-red-700';
+                detailEl.textContent = err.message || 'Request failed. Run: npm start';
+                detailEl.className = 'text-sm text-red-600';
+            }
+
+            resultEl.classList.remove('hidden');
+            btn.disabled = false;
+            btn.innerHTML = '<i data-feather="database" class="w-4 h-4"></i> Check bucket';
+            feather.replace();
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            feather.replace();
+        });
+    </script>
+</body>
+
+</html>

@@ -56,18 +56,7 @@
     npm install
     ```
 
-3. **Create an .env file** in the root directory with the following content:
-
-    ```bash
-    PORT=3000
-    AWS_ACCESS_KEY_ID=<your-cloudflare-r2-access-key>
-    AWS_SECRET_ACCESS_KEY=<your-cloudflare-r2-secret-key>
-    R2_BUCKET_NAME=<your-cloudflare-r2-bucket-name>
-    R2_BUCKET=<your-cloudflare-r2-bucket-name>
-    R2_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
-    ```
-
-    Replace `<your-cloudflare-r2-access-key>`, `<your-cloudflare-r2-secret-key>`, `<your-cloudflare-r2-bucket-name>`, and `<account-id>` with your Cloudflare R2 credentials.
+3. **Configure R2 accounts and buckets** via the app: open **Settings** in the web UI and add your Cloudflare account (endpoint + API credentials) and buckets. All configuration is stored in SQLite (`data/app.db`); no `.env` file is used.
 
 ## Running the Server
 

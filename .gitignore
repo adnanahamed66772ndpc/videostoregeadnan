@@ -79,6 +79,10 @@ web_modules/
 .env.production.local
 .env.local
 
+# Multi-bucket config (contains R2 credentials)
+data/
+buckets.json
+
 # parcel-bundler cache (https://parceljs.org/)
 .cache
 .parcel-cache

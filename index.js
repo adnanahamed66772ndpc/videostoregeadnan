@@ -1,30 +1,119 @@
 const express = require("express");
 const bodyParser = require("body-parser");
-const dotenv = require("dotenv");
+const session = require("express-session");
 const cors = require("cors");
 const path = require("path");
+const fs = require("fs");
 const multer = require("multer");
+const { initDb, loadBucketsConfig, runAndPersist, getOne, getAll } = require("./lib/db");
 const { S3Client, PutObjectCommand, DeleteObjectCommand, DeleteObjectsCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, CopyObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 
-dotenv.config();
-
 const app = express();
 app.use(bodyParser.json());
-app.use(cors());
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(cors({ origin: true, credentials: true }));
+app.use(session({
+    secret: "r2-file-manager-session-secret",
+    resave: false,
+    saveUninitialized: false,
+    cookie: { httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000, sameSite: "lax" }
+}));
 
-const s3 = new S3Client({
-    region: "auto",
-    endpoint: process.env.R2_ENDPOINT,
-    credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+const LOGIN_USER = "admin";
+const LOGIN_PASS = "Adnan2020";
+
+function requireAuth(req, res, next) {
+    const isLoginPage = req.path === "/login";
+    const isLogout = req.path === "/logout";
+    const hasSession = req.session && req.session.user;
+
+    if (isLogout) return next();
+    if (isLoginPage && req.method === "GET") return next();
+    if (isLoginPage && req.method === "POST") return next();
+    if (hasSession) return next();
+
+    if (req.xhr || (req.headers.accept && String(req.headers.accept).indexOf("application/json") !== -1)) {
+        return res.status(401).json({ error: "Unauthorized" });
     }
+    return res.redirect("/login");
+}
+app.use(requireAuth);
+
+app.get("/login", (req, res) => {
+    if (req.session && req.session.user) return res.redirect("/");
+    res.sendFile(path.join(__dirname, "templates/login.html"));
+});
+
+app.post("/login", (req, res) => {
+    const username = (req.body.username || "").trim();
+    const password = req.body.password || "";
+    if (username === LOGIN_USER && password === LOGIN_PASS) {
+        req.session.user = username;
+        return res.redirect("/");
+    }
+    res.redirect("/login?error=1");
+});
+
+app.get("/logout", (req, res) => {
+    req.session.destroy(() => {});
+    res.redirect("/login");
+});
+
+app.get("/api/auth-check", (req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    res.status(200).json({ ok: true, user: req.session.user });
 });
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-const BUCKET_NAME = process.env.R2_BUCKET_NAME;
+function getAccountById(accounts, accountId) {
+    return accounts.find((a) => a.id === accountId) || null;
+}
+
+const s3ClientCache = new Map();
+
+function getActiveBucket() {
+    const { accounts, buckets, activeBucketId } = loadBucketsConfig();
+    if (!activeBucketId) return null;
+    const bucket = buckets.find((b) => b.id === activeBucketId);
+    if (!bucket) return null;
+    const account = getAccountById(accounts, bucket.accountId);
+    if (!account) return null;
+    return {
+        id: bucket.id,
+        accountId: account.id,
+        bucketName: bucket.bucketName,
+        label: bucket.label,
+        endpoint: account.endpoint,
+        accessKeyId: account.accessKeyId,
+        secretAccessKey: account.secretAccessKey
+    };
+}
+
+function getS3Client(account) {
+    if (!account) return null;
+    if (s3ClientCache.has(account.id)) return s3ClientCache.get(account.id);
+    const client = new S3Client({
+        region: "auto",
+        endpoint: account.endpoint,
+        credentials: { accessKeyId: account.accessKeyId, secretAccessKey: account.secretAccessKey }
+    });
+    s3ClientCache.set(account.id, client);
+    return client;
+}
+
+function getActiveS3AndBucket() {
+    const bucket = getActiveBucket();
+    if (!bucket) return { s3: null, bucketName: null, bucket };
+    const { accounts } = loadBucketsConfig();
+    const account = getAccountById(accounts, bucket.accountId);
+    return {
+        s3: getS3Client(account),
+        bucketName: bucket.bucketName,
+        bucket
+    };
+}
 
 // Helper to convert S3 streams to strings
 const streamToString = async (stream) => {
@@ -36,23 +125,61 @@ const streamToString = async (stream) => {
 };
 
 app.get("/", (req, res) => {
+    res.setHeader("Cache-Control", "private, no-store");
     res.sendFile(path.join(__dirname, "templates/index.html"));
+});
+
+app.get("/settings", (req, res) => {
+    res.setHeader("Cache-Control", "private, no-store");
+    res.sendFile(path.join(__dirname, "templates/settings.html"));
+});
+
+// Health check - server status
+app.get("/health", (req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    res.status(200).json({
+        status: "ok",
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime()
+    });
+});
+
+// Bucket status - R2 connectivity (uses active bucket)
+app.get("/bucket-status", async (req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    const { s3, bucketName } = getActiveS3AndBucket();
+    if (!s3 || !bucketName) {
+        return res.status(503).json({
+            status: "error",
+            message: "No bucket selected. Add a bucket in Settings → Buckets."
+        });
+    }
+    try {
+        const command = new ListObjectsV2Command({ Bucket: bucketName, MaxKeys: 1 });
+        await s3.send(command);
+        res.status(200).json({ status: "ok", bucket: bucketName, message: "Connected" });
+    } catch (error) {
+        res.status(503).json({
+            status: "error",
+            bucket: bucketName,
+            message: error.message || "Failed to connect to bucket"
+        });
+    }
 });
 
 // 1. Create a file inside a folder
 app.post("/create-file", async (req, res) => {
+    const { s3, bucketName } = getActiveS3AndBucket();
+    if (!s3 || !bucketName) return res.status(503).send({ error: "No bucket selected. Add one in Settings → Buckets." });
     const { folder, fileName, content } = req.body;
-
     const params = {
-        Bucket: BUCKET_NAME,
+        Bucket: bucketName,
         Key: `${folder}/${fileName}`,
         Body: JSON.stringify(content),
         ContentType: "application/json"
     };
-
     try {
-        const command = new PutObjectCommand(params);
-        await s3.send(command);
+        await s3.send(new PutObjectCommand(params));
         res.status(201).send({ message: "File created successfully" });
     } catch (error) {
         res.status(500).send({ error: error.message });
@@ -61,87 +188,36 @@ app.post("/create-file", async (req, res) => {
 
 // 2. Delete a file inside a folder
 app.delete("/delete-file", async (req, res) => {
+    const { s3, bucketName } = getActiveS3AndBucket();
+    if (!s3 || !bucketName) return res.status(503).send({ error: "No bucket selected." });
     const { folder, fileName, fileNames } = req.body;
-
     try {
-        // Handle batch deletion
         if (fileNames && Array.isArray(fileNames)) {
-            const deleteParams = {
-                Bucket: BUCKET_NAME,
-                Delete: {
-                    Objects: fileNames.map((name) => ({ Key: `${folder}/${name}` }))
-                }
-            };
-
-            const deleteCommand = new DeleteObjectsCommand(deleteParams);
-            const result = await s3.send(deleteCommand);
-
+            const deleteParams = { Bucket: bucketName, Delete: { Objects: fileNames.map((name) => ({ Key: `${folder}/${name}` })) } };
+            const result = await s3.send(new DeleteObjectsCommand(deleteParams));
             const deletedCount = result.Deleted ? result.Deleted.length : 0;
             const errorCount = result.Errors ? result.Errors.length : 0;
-
             if (errorCount > 0) {
-                // Some files failed to delete
-                const errorMessages = result.Errors.map(err => `${err.Key}: ${err.Message}`).join('; ');
-                return res.status(207).send({
-                    message: `Deleted ${deletedCount} files successfully, ${errorCount} files failed`,
-                    deleted: deletedCount,
-                    failed: errorCount,
-                    errors: result.Errors
-                });
+                return res.status(207).send({ message: `Deleted ${deletedCount} files, ${errorCount} failed`, deleted: deletedCount, failed: errorCount, errors: result.Errors });
             }
-
             res.status(200).send({ message: `Deleted ${deletedCount} files successfully` });
             return;
         }
-
         if (fileName === "*") {
-            // Delete all files in the folder
-            const listParams = {
-                Bucket: BUCKET_NAME,
-                Prefix: `${folder}/`
-            };
-
-            const listCommand = new ListObjectsV2Command(listParams);
-            const listData = await s3.send(listCommand);
-
+            const listData = await s3.send(new ListObjectsV2Command({ Bucket: bucketName, Prefix: `${folder}/` }));
             if (!listData.Contents || listData.Contents.length === 0) {
                 return res.status(404).send({ message: "No files found in the folder" });
             }
-
-            const deleteParams = {
-                Bucket: BUCKET_NAME,
-                Delete: {
-                    Objects: listData.Contents.map((item) => ({ Key: item.Key }))
-                }
-            };
-
-            const deleteCommand = new DeleteObjectsCommand(deleteParams);
-            await s3.send(deleteCommand);
+            await s3.send(new DeleteObjectsCommand({ Bucket: bucketName, Delete: { Objects: listData.Contents.map((item) => ({ Key: item.Key })) } }));
             res.status(200).send({ message: `Deleted ${listData.Contents.length} files successfully` });
         } else {
-            // Delete single file - first check if it exists
-            const headParams = {
-                Bucket: BUCKET_NAME,
-                Key: `${folder}/${fileName}`
-            };
-
             try {
-                await s3.send(new HeadObjectCommand(headParams));
+                await s3.send(new HeadObjectCommand({ Bucket: bucketName, Key: `${folder}/${fileName}` }));
             } catch (error) {
-                if (error.name === 'NotFound') {
-                    // File doesn't exist - treat as success for idempotency
-                    return res.status(200).send({ message: "File already deleted or doesn't exist" });
-                }
+                if (error.name === 'NotFound') return res.status(200).send({ message: "File already deleted or doesn't exist" });
                 throw error;
             }
-
-            const params = {
-                Bucket: BUCKET_NAME,
-                Key: `${folder}/${fileName}`
-            };
-
-            const command = new DeleteObjectCommand(params);
-            await s3.send(command);
+            await s3.send(new DeleteObjectCommand({ Bucket: bucketName, Key: `${folder}/${fileName}` }));
             res.status(200).send({ message: "File deleted successfully" });
         }
     } catch (error) {
@@ -151,18 +227,11 @@ app.delete("/delete-file", async (req, res) => {
 
 // 3. Update a file inside a folder (overwrite)
 app.put("/update-file", async (req, res) => {
+    const { s3, bucketName } = getActiveS3AndBucket();
+    if (!s3 || !bucketName) return res.status(503).send({ error: "No bucket selected." });
     const { folder, fileName, content } = req.body;
-
-    const params = {
-        Bucket: BUCKET_NAME,
-        Key: `${folder}/${fileName}`,
-        Body: JSON.stringify(content),
-        ContentType: "application/json"
-    };
-
     try {
-        const command = new PutObjectCommand(params);
-        await s3.send(command);
+        await s3.send(new PutObjectCommand({ Bucket: bucketName, Key: `${folder}/${fileName}`, Body: JSON.stringify(content), ContentType: "application/json" }));
         res.status(200).send({ message: "File updated successfully" });
     } catch (error) {
         res.status(500).send({ error: error.message });
@@ -171,16 +240,11 @@ app.put("/update-file", async (req, res) => {
 
 // 4. Read a file inside a folder
 app.get("/read-file", async (req, res) => {
+    const { s3, bucketName } = getActiveS3AndBucket();
+    if (!s3 || !bucketName) return res.status(503).send({ error: "No bucket selected." });
     const { folder, fileName } = req.query;
-
-    const params = {
-        Bucket: BUCKET_NAME,
-        Key: `${folder}/${fileName}`
-    };
-
     try {
-        const command = new GetObjectCommand(params);
-        const data = await s3.send(command);
+        const data = await s3.send(new GetObjectCommand({ Bucket: bucketName, Key: `${folder}/${fileName}` }));
         const content = await streamToString(data.Body);
         res.status(200).send(JSON.parse(content));
     } catch (error) {
@@ -190,24 +254,13 @@ app.get("/read-file", async (req, res) => {
 
 // 5. List files inside a folder or root
 app.get("/list-files", async (req, res) => {
+    const { s3, bucketName } = getActiveS3AndBucket();
+    if (!s3 || !bucketName) return res.status(503).send({ error: "No bucket selected." });
     const { folder } = req.query;
-
-    // Adjust the Prefix based on whether a folder is specified
-    const params = {
-        Bucket: BUCKET_NAME,
-        Prefix: folder ? `${folder}/` : "",
-        Delimiter: "/" // To distinguish folders at root level
-    };
-
+    const params = { Bucket: bucketName, Prefix: folder ? `${folder}/` : "", Delimiter: "/" };
     try {
-        const command = new ListObjectsV2Command(params);
-        const data = await s3.send(command);
-
-        // Get files and folders
-        const files = data.Contents?.map((item) => item.Key) || [];
-        const folders = data.CommonPrefixes?.map((item) => item.Prefix) || [];
-
-        res.status(200).send({ files, folders });
+        const data = await s3.send(new ListObjectsV2Command(params));
+        res.status(200).send({ files: data.Contents?.map((item) => item.Key) || [], folders: data.CommonPrefixes?.map((item) => item.Prefix) || [] });
     } catch (error) {
         res.status(500).send({ error: error.message });
     }
@@ -215,17 +268,11 @@ app.get("/list-files", async (req, res) => {
 
 // 6. List all folders
 app.get("/list-folders", async (req, res) => {
-    const params = {
-        Bucket: BUCKET_NAME,
-        Delimiter: "/"
-    };
-
+    const { s3, bucketName } = getActiveS3AndBucket();
+    if (!s3 || !bucketName) return res.status(503).send({ error: "No bucket selected." });
     try {
-        const command = new ListObjectsV2Command(params);
-        const data = await s3.send(command);
-
-        const folders = data.CommonPrefixes?.map((prefix) => prefix.Prefix) || [];
-        res.status(200).send(folders);
+        const data = await s3.send(new ListObjectsV2Command({ Bucket: bucketName, Delimiter: "/" }));
+        res.status(200).send(data.CommonPrefixes?.map((prefix) => prefix.Prefix) || []);
     } catch (error) {
         res.status(500).send({ error: error.message });
     }
@@ -233,34 +280,16 @@ app.get("/list-folders", async (req, res) => {
 
 // 7. Duplicate a folder
 app.post("/duplicate-folder", async (req, res) => {
+    const { s3, bucketName } = getActiveS3AndBucket();
+    if (!s3 || !bucketName) return res.status(503).send({ error: "No bucket selected." });
     const { sourceFolder, targetFolder } = req.body;
-
-    const listParams = {
-        Bucket: BUCKET_NAME,
-        Prefix: `${sourceFolder}/`
-    };
-
     try {
-        // List all objects in the source folder
-        const listCommand = new ListObjectsV2Command(listParams);
-        const listData = await s3.send(listCommand);
-
-        if (!listData.Contents || listData.Contents.length === 0) {
-            return res.status(404).send({ message: "Source folder is empty or not found" });
-        }
-
-        // Copy each object to the target folder
-        const copyPromises = listData.Contents.map(async (item) => {
-            const copyParams = {
-                Bucket: BUCKET_NAME,
-                CopySource: `${BUCKET_NAME}/${item.Key}`,
-                Key: item.Key.replace(sourceFolder, targetFolder)
-            };
-            const copyCommand = new CopyObjectCommand(copyParams);
-            return s3.send(copyCommand);
-        });
-
-        await Promise.all(copyPromises);
+        const listData = await s3.send(new ListObjectsV2Command({ Bucket: bucketName, Prefix: `${sourceFolder}/` }));
+        if (!listData.Contents || listData.Contents.length === 0) return res.status(404).send({ message: "Source folder is empty or not found" });
+        await Promise.all(listData.Contents.map((item) => {
+            const newKey = item.Key.replace(sourceFolder, targetFolder);
+            return s3.send(new CopyObjectCommand({ Bucket: bucketName, CopySource: `${bucketName}/${item.Key}`, Key: newKey }));
+        }));
         res.status(201).send({ message: "Folder duplicated successfully" });
     } catch (error) {
         res.status(500).send({ error: error.message });
@@ -269,45 +298,17 @@ app.post("/duplicate-folder", async (req, res) => {
 
 // 8. Rename a folder
 app.put("/rename-folder", async (req, res) => {
+    const { s3, bucketName } = getActiveS3AndBucket();
+    if (!s3 || !bucketName) return res.status(503).send({ error: "No bucket selected." });
     const { sourceFolder, targetFolder } = req.body;
-
-    const listParams = {
-        Bucket: BUCKET_NAME,
-        Prefix: `${sourceFolder}/`
-    };
-
     try {
-        // List all objects in the source folder
-        const listCommand = new ListObjectsV2Command(listParams);
-        const listData = await s3.send(listCommand);
-
-        if (!listData.Contents || listData.Contents.length === 0) {
-            return res.status(404).send({ message: "Source folder is empty or not found" });
-        }
-
-        // Copy each object to the target folder and delete original
-        const copyAndDeletePromises = listData.Contents.map(async (item) => {
+        const listData = await s3.send(new ListObjectsV2Command({ Bucket: bucketName, Prefix: `${sourceFolder}/` }));
+        if (!listData.Contents || listData.Contents.length === 0) return res.status(404).send({ message: "Source folder is empty or not found" });
+        await Promise.all(listData.Contents.map(async (item) => {
             const newKey = item.Key.replace(sourceFolder, targetFolder);
-
-            // Copy object to new location
-            const copyParams = {
-                Bucket: BUCKET_NAME,
-                CopySource: `${BUCKET_NAME}/${item.Key}`,
-                Key: newKey
-            };
-            const copyCommand = new PutObjectCommand(copyParams);
-            await s3.send(copyCommand);
-
-            // Delete original object
-            const deleteParams = {
-                Bucket: BUCKET_NAME,
-                Key: item.Key
-            };
-            const deleteCommand = new DeleteObjectCommand(deleteParams);
-            return s3.send(deleteCommand);
-        });
-
-        await Promise.all(copyAndDeletePromises);
+            await s3.send(new CopyObjectCommand({ Bucket: bucketName, CopySource: `${bucketName}/${item.Key}`, Key: newKey }));
+            await s3.send(new DeleteObjectCommand({ Bucket: bucketName, Key: item.Key }));
+        }));
         res.status(200).send({ message: "Folder renamed successfully" });
     } catch (error) {
         res.status(500).send({ error: error.message });
@@ -320,87 +321,212 @@ app.post(
     (req, res, next) => {
         upload.array("files", 50)(req, res, (err) => {
             if (err instanceof multer.MulterError) {
-                if (err.code === "LIMIT_FILE_COUNT") {
-                    return res.status(400).send({ error: "Too many files. Maximum 50 files allowed." });
-                }
+                if (err.code === "LIMIT_FILE_COUNT") return res.status(400).send({ error: "Too many files. Maximum 50 files allowed." });
                 return res.status(400).send({ error: err.message });
-            } else if (err) {
-                return res.status(500).send({ error: err.message });
             }
+            if (err) return res.status(500).send({ error: err.message });
             next();
         });
     },
     async (req, res) => {
+        const { s3, bucketName } = getActiveS3AndBucket();
+        if (!s3 || !bucketName) return res.status(503).send({ error: "No bucket selected." });
         const folder = req.body.folder || "uploads";
         const files = req.files;
-
-        if (!files || files.length === 0) {
-            return res.status(400).send({ message: "No files uploaded" });
-        }
-
+        if (!files || files.length === 0) return res.status(400).send({ message: "No files uploaded" });
         try {
-            const uploadPromises = files.map((file) => {
-                const params = {
-                    Bucket: BUCKET_NAME,
-                    Key: `${folder}/${file.originalname}`,
-                    Body: file.buffer,
-                    ContentType: file.mimetype
-                };
-
-                const command = new PutObjectCommand(params);
-                return s3.send(command);
-            });
-
-            await Promise.all(uploadPromises);
-            res.status(201).send({
-                message: "Files uploaded successfully",
-                fileNames: files.map((file) => file.originalname)
-            });
+            await Promise.all(files.map((file) => s3.send(new PutObjectCommand({ Bucket: bucketName, Key: `${folder}/${file.originalname}`, Body: file.buffer, ContentType: file.mimetype }))));
+            res.status(201).send({ message: "Files uploaded successfully", fileNames: files.map((f) => f.originalname) });
         } catch (error) {
             res.status(500).send({ error: error.message });
         }
     }
 );
 
+// --- Buckets API (one account, multiple buckets) ---
+app.get("/api/accounts", (req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    try {
+        const config = loadBucketsConfig();
+        const accounts = Array.isArray(config.accounts) ? config.accounts : [];
+        res.status(200).json({ accounts: accounts.map((a) => ({ id: a.id, label: a.label, endpoint: a.endpoint })) });
+    } catch (err) {
+        console.error("GET /api/accounts error:", err);
+        res.status(500).json({ error: err.message || "Failed to load accounts" });
+    }
+});
+
+app.post("/api/accounts", (req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    const { label, endpoint, accessKeyId, secretAccessKey } = req.body || {};
+    if (!label || !endpoint || !accessKeyId || !secretAccessKey) {
+        return res.status(400).json({ error: "Missing: label, endpoint, accessKeyId, secretAccessKey" });
+    }
+    try {
+        const id = require("crypto").randomUUID();
+        runAndPersist("INSERT INTO accounts (id, label, endpoint, access_key_id, secret_access_key) VALUES (?, ?, ?, ?, ?)", [id, label, endpoint, accessKeyId, secretAccessKey]);
+        res.status(201).json({ id, label, endpoint });
+    } catch (err) {
+        res.status(500).json({ error: err.message || "Failed to add account" });
+    }
+});
+
+app.delete("/api/accounts/:id", (req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    const { id } = req.params;
+    try {
+        const acc = getOne("SELECT id FROM accounts WHERE id = ?", [id]);
+        if (!acc) return res.status(404).json({ error: "Account not found" });
+        const activeRow = getOne("SELECT value FROM settings WHERE key = ?", ["activeBucketId"]);
+        const bucketsOfAccount = getAll("SELECT id FROM buckets WHERE account_id = ?", [id]);
+        const activeBucketId = activeRow ? activeRow.value : null;
+        const activeWasInAccount = activeBucketId && bucketsOfAccount.some((b) => b.id === activeBucketId);
+        runAndPersist("DELETE FROM buckets WHERE account_id = ?", [id]);
+        runAndPersist("DELETE FROM accounts WHERE id = ?", [id]);
+        if (activeWasInAccount) {
+            const firstRemaining = getOne("SELECT id FROM buckets LIMIT 1");
+            runAndPersist("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["activeBucketId", firstRemaining ? firstRemaining.id : null]);
+        }
+        s3ClientCache.delete(id);
+        res.status(200).json({ message: "Account removed" });
+    } catch (err) {
+        res.status(500).json({ error: err.message || "Failed to remove account" });
+    }
+});
+
+app.get("/api/buckets", (req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    try {
+        const config = loadBucketsConfig();
+        const accounts = Array.isArray(config.accounts) ? config.accounts : [];
+        const buckets = Array.isArray(config.buckets) ? config.buckets : [];
+        const activeBucketId = config.activeBucketId || null;
+        const list = buckets.map((b) => {
+            const acc = getAccountById(accounts, b.accountId);
+            return {
+                id: b.id,
+                accountId: b.accountId || "",
+                accountLabel: acc ? acc.label : "",
+                label: b.label || b.bucketName || "",
+                bucketName: b.bucketName || "",
+                isActive: b.id === activeBucketId
+            };
+        });
+        res.status(200).json({
+            accounts: accounts.map((a) => ({ id: a.id, label: a.label || "" })),
+            buckets: list,
+            activeBucketId
+        });
+    } catch (err) {
+        console.error("GET /api/buckets error:", err);
+        res.status(500).json({ error: err.message || "Failed to load buckets" });
+    }
+});
+
+app.get("/api/buckets/active", (req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    const bucket = getActiveBucket();
+    if (!bucket) return res.status(200).json({ active: null });
+    res.status(200).json({ active: { id: bucket.id, label: bucket.label, bucketName: bucket.bucketName } });
+});
+
+app.post("/api/buckets", (req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    const { accountId, bucketName, label } = req.body || {};
+    if (!accountId || !bucketName) return res.status(400).json({ error: "Missing: accountId, bucketName" });
+    try {
+        const acc = getOne("SELECT id FROM accounts WHERE id = ?", [accountId]);
+        if (!acc) return res.status(404).json({ error: "Account not found" });
+        const id = require("crypto").randomUUID();
+        const labelVal = label || bucketName;
+        runAndPersist("INSERT INTO buckets (id, account_id, bucket_name, label) VALUES (?, ?, ?, ?)", [id, accountId, bucketName, labelVal]);
+        const activeRow = getOne("SELECT value FROM settings WHERE key = ?", ["activeBucketId"]);
+        if (!activeRow || !activeRow.value) {
+            runAndPersist("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["activeBucketId", id]);
+        }
+        res.status(201).json({ id, accountId, bucketName, label: labelVal, isActive: !activeRow || !activeRow.value });
+    } catch (err) {
+        res.status(500).json({ error: err.message || "Failed to add bucket" });
+    }
+});
+
+app.put("/api/buckets/active", (req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    const { id } = req.body || {};
+    try {
+        const b = getOne("SELECT id FROM buckets WHERE id = ?", [id]);
+        if (!b) return res.status(404).json({ error: "Bucket not found" });
+        runAndPersist("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["activeBucketId", id]);
+        res.status(200).json({ activeBucketId: id });
+    } catch (err) {
+        res.status(500).json({ error: err.message || "Failed to set active bucket" });
+    }
+});
+
+app.delete("/api/buckets/:id", (req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    const { id } = req.params;
+    try {
+        const b = getOne("SELECT id FROM buckets WHERE id = ?", [id]);
+        if (!b) return res.status(404).json({ error: "Bucket not found" });
+        const activeRow = getOne("SELECT value FROM settings WHERE key = ?", ["activeBucketId"]);
+        runAndPersist("DELETE FROM buckets WHERE id = ?", [id]);
+        if (activeRow && activeRow.value === id) {
+            const first = getOne("SELECT id FROM buckets LIMIT 1");
+            runAndPersist("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["activeBucketId", first ? first.id : null]);
+        }
+        res.status(200).json({ message: "Bucket removed" });
+    } catch (err) {
+        res.status(500).json({ error: err.message || "Failed to remove bucket" });
+    }
+});
+
+// Get single file signed URL (for preview / download)
+app.get("/get-file-url", async (req, res) => {
+    const { s3, bucketName } = getActiveS3AndBucket();
+    if (!s3 || !bucketName) return res.status(503).json({ error: "No bucket selected." });
+    const { key, expires } = req.query;
+    if (!key) return res.status(400).json({ error: "Missing key." });
+    try {
+        const urlOptions = expires ? { expiresIn: parseInt(expires, 10) } : undefined;
+        const url = await getSignedUrl(s3, new GetObjectCommand({ Bucket: bucketName, Key: key }), urlOptions);
+        res.status(200).json({ url });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // 10. Get URLs for files inside a folder or root
 app.get("/get-file-urls", async (req, res) => {
-    const { folder, expires } = req.query; // Accept `expires` as a query parameter
-
-    const params = {
-        Bucket: BUCKET_NAME,
-        Prefix: folder ? `${folder}/` : ""
-    };
-
+    const { s3, bucketName } = getActiveS3AndBucket();
+    if (!s3 || !bucketName) return res.status(503).send({ error: "No bucket selected." });
+    const { folder, expires } = req.query;
     try {
-        const command = new ListObjectsV2Command(params);
-        const data = await s3.send(command);
-
-        const files = data.Contents?.map((item) => item.Key) || [];
-
-        // Generate pre-signed URLs for the files
-        const urls = await Promise.all(
-            files.map(async (fileKey) => {
-                // Generate URL without expiration if expires is not provided
-                const urlOptions = expires
-                    ? { expiresIn: parseInt(expires, 10) } // Use the provided expiration time
-                    : undefined; // No expiration
-
-                const url = await getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET_NAME, Key: fileKey }), urlOptions);
-
-                return { fileKey, url };
-            })
-        );
-
+        const data = await s3.send(new ListObjectsV2Command({ Bucket: bucketName, Prefix: folder ? `${folder}/` : "" }));
+        const fileKeys = data.Contents?.map((item) => item.Key) || [];
+        const urlOptions = expires ? { expiresIn: parseInt(expires, 10) } : undefined;
+        const urls = await Promise.all(fileKeys.map(async (fileKey) => ({
+            fileKey,
+            url: await getSignedUrl(s3, new GetObjectCommand({ Bucket: bucketName, Key: fileKey }), urlOptions)
+        })));
         res.status(200).send(urls);
     } catch (error) {
         res.status(500).send({ error: error.message });
     }
 });
 
-// Start server
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-});
+// Start server (init SQLite before accepting connections)
+const PORT = 3000;
+(async () => {
+    try {
+        await initDb();
+        app.listen(PORT, () => {
+            console.log(`Server is running on port ${PORT}`);
+        });
+    } catch (err) {
+        console.error("Failed to start server:", err);
+        process.exit(1);
+    }
+})();
 
 module.exports = app;

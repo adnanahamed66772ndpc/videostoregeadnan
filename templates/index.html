@@ -5,7 +5,24 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>R2 File Manager</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+                    colors: {
+                        primary: { 50: '#eff6ff', 100: '#dbeafe', 200: '#bfdbfe', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8' },
+                    },
+                    borderRadius: { xl: '0.75rem', '2xl': '1rem', '3xl': '1.5rem' },
+                    boxShadow: { 'soft': '0 1px 3px 0 rgb(0 0 0 / 0.05), 0 1px 2px -1px rgb(0 0 0 / 0.05)' },
+                }
+            }
+        };
+    </script>
     <!-- Alpine.js for reactive components -->
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <!-- Feather Icons -->
@@ -13,16 +30,16 @@
     <style>
         .file-item:hover,
         .folder-item:hover {
-            background-color: #ececec;
+            background-color: #f9fafb;
         }
 
         .file-item.selected {
-            background-color: #e5e7eb;
-            border-left: 3px solid #374151;
+            background-color: #eff6ff;
+            border-left: 3px solid #2563eb;
         }
 
         .file-item.range-hover {
-            background-color: #c4d7ff;
+            background-color: #dbeafe;
         }
 
         .file-item {
@@ -46,228 +63,251 @@
 
         @keyframes slideIn {
             from {
-                transform: translateY(-100%);
+                transform: translateX(100%);
                 opacity: 0;
             }
-
             to {
-                transform: translateY(0);
+                transform: translateX(0);
                 opacity: 1;
             }
         }
 
         .action-btn {
-            padding: 0.25rem 0.5rem;
+            padding: 0.375rem 0.5rem;
             font-size: 0.875rem;
+            border-radius: 0.5rem;
         }
 
-        /* Better focus states */
         button:focus-visible,
-        input:focus-visible {
-            outline: 2px solid #374151;
+        input:focus-visible,
+        textarea:focus-visible {
+            outline: 2px solid #2563eb;
             outline-offset: 2px;
         }
 
-        /* Smooth transitions */
         .file-item,
         .folder-item,
         button {
             transition: all 0.15s ease;
         }
 
-        /* Custom scrollbar */
         ::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
+            width: 6px;
+            height: 6px;
         }
-
         ::-webkit-scrollbar-track {
-            background: #f1f1f1;
+            background: #f3f4f6;
+            border-radius: 3px;
         }
-
         ::-webkit-scrollbar-thumb {
-            background: #9ca3af;
-            border-radius: 4px;
+            background: #d1d5db;
+            border-radius: 3px;
         }
-
         ::-webkit-scrollbar-thumb:hover {
-            background: #6b7280;
+            background: #9ca3af;
         }
     </style>
 </head>
 
-<body class="bg-gray-50 min-h-screen">
+<body class="bg-gray-50 min-h-screen font-sans antialiased text-gray-900">
     <!-- Toast Notifications -->
-    <div id="toast-container" class="fixed top-4 right-4 z-50 space-y-2"></div>
+    <div id="toast-container" class="fixed top-6 right-6 z-50 space-y-3 flex flex-col items-end"></div>
 
-    <!-- Header -->
-    <header class="bg-white shadow-sm border-b">
-        <div class="max-w-7xl mx-auto px-4 py-3">
-            <div class="flex items-center justify-between flex-wrap gap-2">
-                <h1 class="text-xl font-bold text-gray-900">R2 Manager V2</h1>
+    <!-- Header - Untitled UI style -->
+    <header class="bg-white border-b border-gray-200 sticky top-0 z-30">
+        <div class="max-w-6xl mx-auto px-6 py-4">
+            <div class="flex items-center justify-between flex-wrap gap-3">
+                <h1 class="text-2xl font-semibold text-gray-900 tracking-tight">R2 File Manager</h1>
                 <div class="flex gap-2 flex-wrap">
                     <button onclick="selectAllFiles()" id="select-all-btn"
-                        class="bg-gray-600 hover:bg-gray-700 text-center flex justify-center items-center text-white px-3 py-1.5 rounded text-sm transition">
-                        <i data-feather="check-square" class="w-4 h-4 inline mr-1"></i>Select All
+                        class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-700 bg-white border border-gray-300 shadow-soft hover:bg-gray-50 transition">
+                        <i data-feather="check-square" class="w-4 h-4"></i>
+                        <span>Select All</span>
                     </button>
                     <button onclick="openUploadModal()"
-                        class="bg-gray-600 hover:bg-gray-700 text-center flex justify-center items-center text-white px-3 py-1.5 rounded text-sm transition">
-                        <i data-feather="upload" class="w-4 h-4 inline mr-1"></i>Upload
+                        class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 shadow-soft transition">
+                        <i data-feather="upload" class="w-4 h-4"></i>
+                        <span>Upload</span>
                     </button>
                     <button id="delete-selected-btn" onclick="deleteSelectedFiles()"
-                        class="bg-gray-800 hover:bg-gray-900 text-center flex justify-center items-center text-white px-3 py-1.5 rounded text-sm transition hidden">
-                        <i data-feather="trash-2" class="w-4 h-4 inline mr-1"></i>Delete (<span
-                            id="selected-count">0</span>)
+                        class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-700 shadow-soft transition hidden">
+                        <i data-feather="trash-2" class="w-4 h-4"></i>
+                        <span>Delete (<span id="selected-count">0</span>)</span>
                     </button>
+                    <a href="/settings"
+                        class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-700 bg-white border border-gray-300 shadow-soft hover:bg-gray-50 transition"
+                        title="Settings">
+                        <i data-feather="settings" class="w-4 h-4"></i>
+                        <span>Settings</span>
+                    </a>
+                    <a href="/logout"
+                        class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:text-gray-800 bg-white border border-gray-300 shadow-soft hover:bg-gray-50 transition"
+                        title="Logout">
+                        <i data-feather="log-out" class="w-4 h-4"></i>
+                        <span>Logout</span>
+                    </a>
                 </div>
             </div>
         </div>
     </header>
 
     <!-- Main Content -->
-    <main class="max-w-7xl mx-auto px-4 py-4">
-        <!-- Compact Header Section -->
-        <div class="bg-white rounded shadow-sm p-3 mb-3">
-            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <!-- Breadcrumb Navigation -->
+    <main class="max-w-6xl mx-auto px-6 py-6">
+        <!-- Breadcrumb & actions card -->
+        <div class="bg-white rounded-2xl border border-gray-200 shadow-soft p-5 mb-6">
+            <div class="flex items-center gap-2 text-xs text-gray-500 mb-3">
+                <i data-feather="database" class="w-3.5 h-3.5"></i>
+                <span>Current bucket:</span>
+                <a href="/settings" id="current-bucket-label" class="font-medium text-primary-600 hover:underline">—</a>
+            </div>
+            <div id="all-buckets-row" class="mb-4 hidden">
+                <p class="text-xs font-medium text-gray-500 mb-2">All buckets</p>
+                <div id="all-buckets-list" class="rounded-xl border border-gray-200 bg-gray-50/50 divide-y divide-gray-200 overflow-hidden"></div>
+            </div>
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div class="flex items-center gap-2 text-sm flex-1 min-w-0">
                     <button onclick="navigateToRoot()"
-                        class="text-gray-600 hover:text-gray-800 font-medium flex items-center gap-1 flex-shrink-0">
-                        <i data-feather="database" class="text-blue-500 w-4 h-4"></i>
-                        <span class="hidden sm:inline text-blue-500">Bucket</span>
+                        class="inline-flex items-center gap-2 text-primary-600 hover:text-primary-700 font-medium flex-shrink-0 rounded-lg px-2 py-1.5 hover:bg-primary-50 transition">
+                        <i data-feather="database" class="w-4 h-4"></i>
+                        <span class="hidden sm:inline">Bucket</span>
                     </button>
-                    <span id="breadcrumb" class="text-gray-600 truncate"></span>
+                    <span class="text-gray-400">/</span>
+                    <span id="breadcrumb" class="text-gray-600 truncate font-medium"></span>
                 </div>
-
-                <!-- Action Buttons -->
-                <div class="flex items-center gap-1 flex-wrap">
+                <div class="flex items-center gap-2 flex-wrap">
                     <button onclick="openCreateFolderModal()"
-                        class="bg-gray-600 hover:bg-gray-700 text-white px-2 py-1.5 rounded text-xs transition flex items-center gap-1">
-                        <i data-feather="folder-plus" class="w-3.5 h-3.5"></i>
+                        class="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 transition">
+                        <i data-feather="folder-plus" class="w-4 h-4"></i>
                         <span class="hidden sm:inline">New Folder</span>
                     </button>
                     <button onclick="openCreateFileModal()"
-                        class="bg-gray-600 hover:bg-gray-700 text-white px-2 py-1.5 rounded text-xs transition flex items-center gap-1">
-                        <i data-feather="file-plus" class="w-3.5 h-3.5"></i>
+                        class="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 transition">
+                        <i data-feather="file-plus" class="w-4 h-4"></i>
                         <span class="hidden sm:inline">New File</span>
                     </button>
                     <button onclick="loadCurrentFolder()"
-                        class="bg-gray-600 hover:bg-gray-700 text-white px-2 py-1.5 rounded text-xs transition flex items-center gap-1">
-                        <i data-feather="refresh-ccw" class="w-3.5 h-3.5"></i>
+                        class="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 transition">
+                        <i data-feather="refresh-ccw" class="w-4 h-4"></i>
                         <span class="hidden sm:inline">Refresh</span>
                     </button>
                     <button onclick="clearSelection()" id="clear-selection-btn"
-                        class="bg-gray-500 hover:bg-gray-600 text-white px-2 py-1.5 rounded text-xs transition hidden flex items-center gap-1">
-                        <i data-feather="x" class="w-3.5 h-3.5"></i>
+                        class="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:text-gray-800 hidden">
+                        <i data-feather="x" class="w-4 h-4"></i>
                         <span class="hidden sm:inline">Clear</span>
                     </button>
                 </div>
             </div>
-
-            <!-- Compact Keyboard Shortcuts -->
-            <div class="mt-2 pt-2 border-t border-gray-100">
-                <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600">
-                    <span class="font-medium">Select:</span>
-                    <span><kbd class="bg-gray-200 px-1 py-0.5 rounded text-xs">Click</kbd></span>
-                    <span><kbd class="bg-gray-200 px-1 py-0.5 rounded text-xs">Shift+Click</kbd></span>
-                    <span><kbd class="bg-gray-200 px-1 py-0.5 rounded text-xs">Ctrl+A</kbd></span>
-                    <span><kbd class="bg-gray-200 px-1 py-0.5 rounded text-xs">Esc</kbd></span>
+            <div class="mt-4 pt-4 border-t border-gray-100">
+                <p class="text-xs text-gray-500 font-medium">Selection</p>
+                <div class="flex flex-wrap items-center gap-2 mt-1.5">
+                    <kbd class="inline-flex items-center px-2 py-1 rounded-md bg-gray-100 text-gray-600 text-xs font-medium">Click</kbd>
+                    <kbd class="inline-flex items-center px-2 py-1 rounded-md bg-gray-100 text-gray-600 text-xs font-medium">Shift+Click</kbd>
+                    <kbd class="inline-flex items-center px-2 py-1 rounded-md bg-gray-100 text-gray-600 text-xs font-medium">Ctrl+A</kbd>
+                    <kbd class="inline-flex items-center px-2 py-1 rounded-md bg-gray-100 text-gray-600 text-xs font-medium">Esc</kbd>
                 </div>
             </div>
         </div>
 
         <!-- Files and Folders List -->
-        <div class="bg-white rounded shadow-sm overflow-hidden">
-            <div id="loading" class="p-6 text-center text-gray-500">
-                <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-                <p class="mt-2 text-sm">Loading...</p>
+        <div class="bg-white rounded-2xl border border-gray-200 shadow-soft overflow-hidden">
+            <div id="loading" class="p-12 text-center">
+                <div class="inline-flex flex-col items-center gap-3">
+                    <div class="w-10 h-10 rounded-full border-2 border-primary-200 border-t-primary-600 animate-spin"></div>
+                    <p class="text-sm font-medium text-gray-500">Loading...</p>
+                </div>
             </div>
             <div id="content" class="hidden">
                 <div id="folders-list"></div>
                 <div id="files-list"></div>
-                <div id="empty-state" class="p-6 text-center text-gray-500 hidden">
-                    <i data-feather="folder" class="w-12 h-12 mx-auto mb-2 text-gray-300"></i>
-                    <p>No files or folders here</p>
+                <div id="empty-state" class="hidden py-16 px-6 text-center">
+                    <div class="inline-flex flex-col items-center gap-4 max-w-sm">
+                        <div class="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center">
+                            <i data-feather="folder" class="w-8 h-8 text-gray-400"></i>
+                        </div>
+                        <div>
+                            <p class="text-base font-semibold text-gray-900">No files or folders</p>
+                            <p class="text-sm text-gray-500 mt-1">Upload files or create a folder to get started.</p>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </main>
 
-    <!-- Upload Modal -->
-    <div id="upload-modal" class="modal fixed inset-0 bg-black bg-opacity-50 items-center justify-center z-40">
-        <div class="bg-white rounded shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-hidden">
-            <div class="p-6">
-                <h2 class="text-lg font-bold mb-4 flex items-center gap-2">
-                    <i data-feather="upload" class="w-5 h-5"></i>
-                    Upload Files & Folders
+    <!-- Upload Modal - Untitled UI style -->
+    <div id="upload-modal" class="modal fixed inset-0 bg-gray-900/50 backdrop-blur-sm items-center justify-center z-40 p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden border border-gray-200">
+            <div id="upload-drop-zone" class="p-8 rounded-2xl transition-colors duration-150">
+                <h2 class="text-xl font-semibold text-gray-900 mb-6 flex items-center gap-3">
+                    <span class="w-10 h-10 rounded-xl bg-primary-50 flex items-center justify-center">
+                        <i data-feather="upload" class="w-5 h-5 text-primary-600"></i>
+                    </span>
+                    Upload files & folders
                 </h2>
 
-                <!-- Upload Options -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    <!-- File Upload -->
-                    <div
-                        class="border-2 border-dashed border-gray-300 rounded-lg p-4 hover:border-blue-400 transition-colors">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                    <div class="border-2 border-dashed border-gray-200 rounded-xl p-6 hover:border-primary-300 hover:bg-primary-50/50 transition-all cursor-pointer" onclick="document.getElementById('file-input').click()">
                         <div class="text-center">
-                            <i data-feather="file" class="w-8 h-8 text-gray-400 mx-auto mb-2"></i>
-                            <h3 class="font-medium text-gray-700 mb-2">Upload Files</h3>
+                            <div class="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center mx-auto mb-3">
+                                <i data-feather="file" class="w-6 h-6 text-gray-500"></i>
+                            </div>
+                            <h3 class="font-medium text-gray-900 mb-1">Upload files</h3>
+                            <p class="text-sm text-gray-500">Select multiple files</p>
                             <input type="file" id="file-input" multiple class="hidden">
-                            <button onclick="document.getElementById('file-input').click()"
-                                class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm transition">
-                                Select Files
-                            </button>
                         </div>
                     </div>
-
-                    <!-- Folder Upload -->
-                    <div
-                        class="border-2 border-dashed border-gray-300 rounded-lg p-4 hover:border-green-400 transition-colors">
+                    <div class="border-2 border-dashed border-gray-200 rounded-xl p-6 hover:border-primary-300 hover:bg-primary-50/50 transition-all cursor-pointer" onclick="document.getElementById('folder-input').click()">
                         <div class="text-center">
-                            <i data-feather="folder" class="w-8 h-8 text-green-400 mx-auto mb-2"></i>
-                            <h3 class="font-medium text-gray-700 mb-2">Upload Folder</h3>
+                            <div class="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center mx-auto mb-3">
+                                <i data-feather="folder" class="w-6 h-6 text-gray-500"></i>
+                            </div>
+                            <h3 class="font-medium text-gray-900 mb-1">Upload folder</h3>
+                            <p class="text-sm text-gray-500">Preserve structure</p>
                             <input type="file" id="folder-input" webkitdirectory multiple class="hidden">
-                            <button onclick="document.getElementById('folder-input').click()"
-                                class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded text-sm transition">
-                                Select Folder
-                            </button>
                         </div>
                     </div>
                 </div>
+                <p class="text-xs text-gray-500 mb-4 -mt-2">or drag and drop files or folders here</p>
 
-                <!-- Selected Items Display -->
-                <div id="selected-items" class="hidden">
-                    <div class="flex items-center justify-between mb-2">
-                        <h3 class="font-medium text-gray-700 flex items-center gap-2">
-                            <i data-feather="list" class="w-4 h-4"></i>
-                            Selected Items
+                <div id="selected-items" class="hidden mb-6">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                            <i data-feather="list" class="w-4 h-4 text-gray-500"></i>
+                            Selected items
                         </h3>
-                        <button onclick="clearAllSelections()" class="text-xs text-red-600 hover:text-red-800 underline"
-                            title="Clear all selections">
-                            Clear All
+                        <button onclick="clearAllSelections()" class="text-sm font-medium text-red-600 hover:text-red-700">
+                            Clear all
                         </button>
                     </div>
-                    <div class="max-h-60 overflow-y-auto border rounded p-3 bg-gray-50">
+                    <div class="max-h-48 overflow-y-auto rounded-xl border border-gray-200 bg-gray-50/50 p-3">
                         <div id="selected-files-list" class="space-y-1"></div>
                     </div>
                 </div>
 
-                <!-- Upload Progress (hidden by default) -->
-                <div id="upload-progress" class="hidden mt-4">
-                    <div class="flex items-center gap-2 mb-2">
-                        <i data-feather="loader" class="w-4 h-4 animate-spin"></i>
-                        <span class="text-sm text-gray-600">Uploading...</span>
+                <div id="upload-progress" class="hidden mb-6">
+                    <div class="flex items-center justify-between mb-1.5">
+                        <span class="text-sm font-medium text-gray-700">
+                            <span id="upload-progress-label">Uploading</span>
+                            <span id="upload-progress-detail" class="text-primary-600 font-semibold ml-1"></span>
+                        </span>
+                        <span id="upload-progress-pct" class="text-sm font-semibold text-primary-600 tabular-nums">0%</span>
                     </div>
-                    <div class="w-full bg-gray-200 rounded-full h-2">
-                        <div id="progress-bar" class="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                            style="width: 0%"></div>
+                    <div id="upload-progress-stats" class="text-xs text-gray-500 mb-2 min-h-[1rem]">
+                        <span id="upload-speed">—</span><span id="upload-eta" class="ml-2">—</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                        <div id="progress-bar" class="bg-primary-600 h-3 rounded-full" style="width: 0%"></div>
                     </div>
                 </div>
 
-                <div class="flex justify-end gap-2 mt-6">
+                <div class="flex justify-end gap-3 pt-2">
                     <button onclick="closeUploadModal()"
-                        class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded hover:bg-gray-50 transition">Cancel</button>
+                        class="px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition">
+                        Cancel
+                    </button>
                     <button onclick="uploadFiles()" id="upload-btn"
-                        class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm transition disabled:opacity-50 disabled:cursor-not-allowed">
-                        <i data-feather="upload" class="w-4 h-4 inline mr-1"></i>
+                        class="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed">
+                        <i data-feather="upload" class="w-4 h-4"></i>
                         Upload
                     </button>
                 </div>
@@ -276,74 +316,190 @@
     </div>
 
     <!-- Create Folder Modal -->
-    <div id="create-folder-modal" class="modal fixed inset-0 bg-black bg-opacity-50 items-center justify-center z-40">
-        <div class="bg-white rounded shadow-xl max-w-md w-full mx-4">
-            <div class="p-4">
-                <h2 class="text-lg font-bold mb-3">Create New Folder</h2>
+    <div id="create-folder-modal" class="modal fixed inset-0 bg-gray-900/50 backdrop-blur-sm items-center justify-center z-40 p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-gray-200">
+            <div class="p-8">
+                <h2 class="text-xl font-semibold text-gray-900 mb-5">Create new folder</h2>
                 <input type="text" id="folder-name-input" placeholder="Folder name"
-                    class="w-full border border-gray-300 rounded p-2 mb-3 text-sm">
-                <div class="flex justify-end gap-2">
+                    class="w-full border border-gray-300 rounded-lg px-3.5 py-2.5 text-sm text-gray-900 placeholder-gray-500 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 mb-6">
+                <div class="flex justify-end gap-3">
                     <button id="create-folder-cancel-btn" onclick="closeCreateFolderModal()"
-                        class="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+                        class="px-4 py-2.5 text-sm font-medium text-gray-700 hover:text-gray-900">Cancel</button>
                     <button id="create-folder-btn" onclick="createFolder()"
-                        class="bg-gray-600 hover:bg-gray-700 text-white px-3 py-1.5 rounded text-sm">Create</button>
+                        class="px-4 py-2.5 text-sm font-medium text-white bg-gray-900 hover:bg-gray-800 rounded-lg transition">Create</button>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- Create File Modal -->
-    <div id="create-file-modal" class="modal fixed inset-0 bg-black bg-opacity-50 items-center justify-center z-40">
-        <div class="bg-white rounded shadow-xl max-w-md w-full mx-4">
-            <div class="p-4">
-                <h2 class="text-lg font-bold mb-3">Create New File</h2>
-                <input type="text" id="file-name-input" placeholder="File name (e.g., data.json)"
-                    class="w-full border border-gray-300 rounded p-2 mb-3 text-sm">
+    <div id="create-file-modal" class="modal fixed inset-0 bg-gray-900/50 backdrop-blur-sm items-center justify-center z-40 p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-gray-200">
+            <div class="p-8">
+                <h2 class="text-xl font-semibold text-gray-900 mb-5">Create new file</h2>
+                <input type="text" id="file-name-input" placeholder="File name (e.g. data.json)"
+                    class="w-full border border-gray-300 rounded-lg px-3.5 py-2.5 text-sm text-gray-900 placeholder-gray-500 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 mb-4">
                 <textarea id="file-content-input" placeholder="File content (JSON)"
-                    class="w-full border border-gray-300 rounded p-2 mb-3 h-24 text-sm"></textarea>
-                <div class="flex justify-end gap-2">
+                    class="w-full border border-gray-300 rounded-lg px-3.5 py-2.5 text-sm text-gray-900 placeholder-gray-500 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 h-28 mb-6 resize-none"></textarea>
+                <div class="flex justify-end gap-3">
                     <button id="create-file-cancel-btn" onclick="closeCreateFileModal()"
-                        class="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+                        class="px-4 py-2.5 text-sm font-medium text-gray-700 hover:text-gray-900">Cancel</button>
                     <button id="create-file-btn" onclick="createFile()"
-                        class="bg-gray-600 hover:bg-gray-700 text-white px-3 py-1.5 rounded text-sm">Create</button>
+                        class="px-4 py-2.5 text-sm font-medium text-white bg-gray-900 hover:bg-gray-800 rounded-lg transition">Create</button>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- Rename Folder Modal -->
-    <div id="rename-folder-modal" class="modal fixed inset-0 bg-black bg-opacity-50 items-center justify-center z-40">
-        <div class="bg-white rounded shadow-xl max-w-md w-full mx-4">
-            <div class="p-4">
-                <h2 class="text-lg font-bold mb-3">Rename Folder</h2>
+    <div id="rename-folder-modal" class="modal fixed inset-0 bg-gray-900/50 backdrop-blur-sm items-center justify-center z-40 p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-gray-200">
+            <div class="p-8">
+                <h2 class="text-xl font-semibold text-gray-900 mb-5">Rename folder</h2>
                 <input type="text" id="rename-folder-input" placeholder="New folder name"
-                    class="w-full border border-gray-300 rounded p-2 mb-3 text-sm">
-                <div class="flex justify-end gap-2">
+                    class="w-full border border-gray-300 rounded-lg px-3.5 py-2.5 text-sm text-gray-900 placeholder-gray-500 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 mb-6">
+                <div class="flex justify-end gap-3">
                     <button id="rename-folder-cancel-btn" onclick="closeRenameFolderModal()"
-                        class="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+                        class="px-4 py-2.5 text-sm font-medium text-gray-700 hover:text-gray-900">Cancel</button>
                     <button id="rename-folder-btn" onclick="renameFolder()"
-                        class="bg-gray-600 hover:bg-gray-700 text-white px-3 py-1.5 rounded text-sm">Rename</button>
+                        class="px-4 py-2.5 text-sm font-medium text-white bg-gray-900 hover:bg-gray-800 rounded-lg transition">Rename</button>
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- File Preview Modal -->
+    <div id="preview-modal" class="modal fixed inset-0 bg-gray-900/70 backdrop-blur-sm items-center justify-center z-50 p-4" onclick="if(event.target===this) closePreviewModal()">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden border border-gray-200 flex flex-col">
+            <div class="flex items-center justify-between px-5 py-3 border-b border-gray-200 flex-shrink-0">
+                <h2 id="preview-modal-title" class="text-base font-semibold text-gray-900 truncate pr-4">Preview</h2>
+                <div class="flex items-center gap-2 flex-shrink-0">
+                    <a id="preview-download-link" href="#" download class="hidden inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-primary-600 hover:bg-primary-50 rounded-lg transition">
+                        <i data-feather="download" class="w-4 h-4"></i> Download
+                    </a>
+                    <button type="button" onclick="closePreviewModal()" class="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition">
+                        <i data-feather="x" class="w-5 h-5"></i>
+                    </button>
+                </div>
+            </div>
+            <div id="preview-modal-body" class="flex-1 overflow-auto p-5 bg-gray-100 flex items-center justify-center min-h-[200px]">
+                <p class="text-sm text-gray-500">Loading…</p>
+            </div>
+        </div>
+    </div>
+
     <script>
+        (function() {
+            var origFetch = window.fetch;
+            window.fetch = function(url, opts) {
+                opts = opts || {};
+                opts.credentials = opts.credentials || 'include';
+                return origFetch.call(window, url, opts).then(function(r) {
+                    if (r.status === 401) { window.location.href = '/login'; }
+                    return r;
+                });
+            };
+        })();
         let currentFolder = '';
         let renamingFolder = '';
         let selectedFiles = new Set();
         let lastSelectedIndex = -1;
         let allFilesList = []; // Store ordered list of all files
+        let thumbnailUrls = {}; // fileKey -> pre-signed URL for image/video thumbnails
+
+        function escapeHtml(s) {
+            const d = document.createElement('div');
+            d.textContent = s == null ? '' : s;
+            return d.innerHTML;
+        }
 
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
+            updateCurrentBucketLabel();
+            loadAllBucketsList();
             loadCurrentFolder();
         });
 
-        // Show toast notification
+        async function updateCurrentBucketLabel() {
+            const el = document.getElementById('current-bucket-label');
+            if (!el) return;
+            try {
+                const res = await fetch('/api/buckets/active');
+                const data = await res.json();
+                if (data.active) {
+                    el.textContent = data.active.label + ' (' + data.active.bucketName + ')';
+                } else {
+                    el.textContent = 'None — add one in Settings';
+                }
+            } catch (_) {
+                el.textContent = '—';
+            }
+        }
+
+        async function loadAllBucketsList() {
+            const row = document.getElementById('all-buckets-row');
+            const list = document.getElementById('all-buckets-list');
+            if (!row || !list) return;
+            try {
+                const res = await fetch('/api/buckets');
+                const ct = res.headers.get('content-type') || '';
+                if (!ct.includes('application/json') || !res.ok) {
+                    row.classList.add('hidden');
+                    return;
+                }
+                const data = await res.json();
+                const buckets = Array.isArray(data.buckets) ? data.buckets : [];
+                if (buckets.length === 0) {
+                    row.classList.add('hidden');
+                    return;
+                }
+                row.classList.remove('hidden');
+                list.innerHTML = buckets.map(b => {
+                    const label = (b.label || b.bucketName || 'Bucket').trim();
+                    const name = (b.bucketName || '').trim();
+                    const display = name ? `${label} (${name})` : label;
+                    if (b.isActive) {
+                        return `<div class="flex items-center justify-between gap-3 px-4 py-2.5 bg-white">
+                            <span class="flex items-center gap-2 text-sm font-medium text-gray-900 min-w-0 truncate"><i data-feather="database" class="w-4 h-4 text-primary-600 flex-shrink-0"></i>${escapeHtml(display)}</span>
+                            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-primary-100 text-primary-700 flex-shrink-0"><i data-feather="check-circle" class="w-3.5 h-3.5"></i>Active</span>
+                        </div>`;
+                    }
+                    return `<div class="flex items-center justify-between gap-3 px-4 py-2.5 bg-white hover:bg-gray-50/80">
+                            <span class="flex items-center gap-2 text-sm font-medium text-gray-700 min-w-0 truncate"><i data-feather="database" class="w-4 h-4 text-gray-400 flex-shrink-0"></i>${escapeHtml(display)}</span>
+                            <button type="button" onclick="setActiveBucketFromHome('${b.id}')" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-primary-600 bg-primary-50 hover:bg-primary-100 border border-primary-200 flex-shrink-0 transition">Use</button>
+                        </div>`;
+                }).join('');
+                refreshIcons();
+            } catch (_) {
+                row.classList.add('hidden');
+            }
+        }
+
+        async function setActiveBucketFromHome(bucketId) {
+            try {
+                const res = await fetch('/api/buckets/active', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: bucketId })
+                });
+                if (!res.ok) {
+                    const d = await res.json().catch(() => ({}));
+                    showToast(d.error || 'Failed to switch bucket', 'error');
+                    return;
+                }
+                updateCurrentBucketLabel();
+                loadAllBucketsList();
+                loadCurrentFolder();
+                showToast('Bucket switched');
+            } catch (e) {
+                showToast('Failed to switch bucket', 'error');
+            }
+        }
+
+        // Show toast notification - Untitled UI style
         function showToast(message, type = 'success') {
             const toast = document.createElement('div');
-            toast.className = `toast px-6 py-3 rounded-lg shadow-lg text-white ${type === 'success' ? 'bg-green-600' : 'bg-red-600'}`;
+            toast.className = `toast px-5 py-3.5 rounded-xl shadow-lg text-sm font-medium text-white ${type === 'success' ? 'bg-gray-900' : 'bg-red-600'}`;
             toast.textContent = message;
             document.getElementById('toast-container').appendChild(toast);
             setTimeout(() => toast.remove(), 3000);
@@ -380,8 +536,41 @@
             updateBreadcrumb();
 
             try {
-                const response = await fetch(`/list-files?folder=${currentFolder}`);
-                const data = await response.json();
+                const listResponse = await fetch(`/list-files?folder=${currentFolder}`);
+                if (listResponse.status === 503) {
+                    const errBody = await listResponse.json().catch(() => ({}));
+                    if (errBody.error && errBody.error.includes('No bucket')) {
+                        document.getElementById('loading').classList.add('hidden');
+                        document.getElementById('content').classList.remove('hidden');
+                        document.getElementById('folders-list').innerHTML = '';
+                        document.getElementById('files-list').innerHTML = '';
+                        document.getElementById('empty-state').classList.remove('hidden');
+                        document.getElementById('empty-state').innerHTML = `
+                            <div class="inline-flex flex-col items-center gap-4 max-w-sm">
+                                <div class="w-16 h-16 rounded-2xl bg-amber-50 flex items-center justify-center">
+                                    <i data-feather="database" class="w-8 h-8 text-amber-500"></i>
+                                </div>
+                                <div>
+                                    <p class="text-base font-semibold text-gray-900">No bucket selected</p>
+                                    <p class="text-sm text-gray-500 mt-1">Add a bucket in <a href="/settings" class="text-primary-600 hover:underline">Settings → Buckets</a> to get started.</p>
+                                </div>
+                            </div>
+                        `;
+                        setTimeout(refreshIcons, 50);
+                        return;
+                    }
+                }
+                const data = await listResponse.json();
+                const urlsResponse = await fetch(`/get-file-urls?folder=${encodeURIComponent(currentFolder)}&expires=3600`);
+                thumbnailUrls = {};
+                try {
+                    const urlsData = await urlsResponse.json();
+                    if (Array.isArray(urlsData)) {
+                        urlsData.forEach(item => {
+                            if (item.fileKey && item.url) thumbnailUrls[item.fileKey] = item.url;
+                        });
+                    }
+                } catch (_) {}
 
                 document.getElementById('loading').classList.add('hidden');
                 document.getElementById('content').classList.remove('hidden');
@@ -389,11 +578,9 @@
                 displayFolders(data.folders || []);
                 displayFiles(data.files || []);
 
-                // Count actual files (excluding folders and placeholders)
                 const actualFiles = (data.files || []).filter(file => !file.endsWith('/') && !file.endsWith('/.placeholder'));
                 const hasContent = (data.folders?.length > 0) || (actualFiles.length > 0);
 
-                // Show empty state when there's NO content
                 if (hasContent) {
                     document.getElementById('empty-state').classList.add('hidden');
                 } else {
@@ -475,20 +662,22 @@
             folders.forEach(folder => {
                 const folderName = folder.replace(/\/$/, '').split('/').pop();
                 const div = document.createElement('div');
-                div.className = 'folder-item border-b border-gray-200 p-2 flex items-center justify-between cursor-pointer';
+                div.className = 'folder-item flex items-center justify-between cursor-pointer px-5 py-3.5 border-b border-gray-100 last:border-b-0';
                 div.innerHTML = `
-                    <div class="flex items-center gap-2 flex-1" onclick="navigateToFolder('${folder.replace(/\/$/, '')}')">
-                        <i data-feather="folder" class="w-5 h-5 text-gray-600"></i>
-                        <span class="font-medium text-gray-900 text-sm">${folderName}</span>
+                    <div class="flex items-center gap-3 flex-1 min-w-0" onclick="navigateToFolder('${folder.replace(/\/$/, '')}')">
+                        <span class="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
+                            <i data-feather="folder" class="w-5 h-5 text-amber-600"></i>
+                        </span>
+                        <span class="font-medium text-gray-900 text-sm truncate">${folderName}</span>
                     </div>
-                    <div class="flex gap-1">
-                        <button onclick="event.stopPropagation(); openRenameFolderModal('${folder.replace(/\/$/, '')}')" class="action-btn text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded transition" title="Rename">
+                    <div class="flex items-center gap-0.5 flex-shrink-0">
+                        <button onclick="event.stopPropagation(); openRenameFolderModal('${folder.replace(/\/$/, '')}')" class="action-btn text-gray-500 hover:text-gray-700 hover:bg-gray-100" title="Rename">
                             <i data-feather="edit-2" class="w-4 h-4"></i>
                         </button>
-                        <button onclick="event.stopPropagation(); duplicateFolder('${folder.replace(/\/$/, '')}')" class="action-btn text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded transition" title="Duplicate">
+                        <button onclick="event.stopPropagation(); duplicateFolder('${folder.replace(/\/$/, '')}')" class="action-btn text-gray-500 hover:text-gray-700 hover:bg-gray-100" title="Duplicate">
                             <i data-feather="copy" class="w-4 h-4"></i>
                         </button>
-                        <button onclick="event.stopPropagation(); deleteFolder('${folder.replace(/\/$/, '')}')" class="action-btn text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition" title="Delete">
+                        <button onclick="event.stopPropagation(); deleteFolder('${folder.replace(/\/$/, '')}')" class="action-btn text-gray-500 hover:text-red-600 hover:bg-red-50" title="Delete">
                             <i data-feather="trash-2" class="w-4 h-4"></i>
                         </button>
                     </div>
@@ -514,44 +703,49 @@
                 const isSelected = selectedFiles.has(file);
 
                 const div = document.createElement('div');
-                div.className = `file-item border-b border-gray-200 p-2 flex items-center justify-between cursor-pointer transition-colors ${isSelected ? 'selected' : ''}`;
+                div.className = `file-item flex items-center justify-between cursor-pointer px-5 py-3.5 border-b border-gray-100 last:border-b-0 transition-colors ${isSelected ? 'selected' : ''}`;
                 div.dataset.file = file;
                 div.dataset.index = index;
 
-                // Add click handler with shift-select support
                 div.onclick = (e) => {
                     if (!e.target.closest('button')) {
                         handleFileClick(file, index, e);
                     }
                 };
-
-                // Add mouseover handler for shift-select preview
+                div.ondblclick = (e) => {
+                    if (!e.target.closest('button')) {
+                        openFilePreview(file);
+                    }
+                };
                 div.onmouseover = (e) => {
                     if (e.shiftKey && lastSelectedIndex !== -1) {
                         highlightRange(index);
                     }
                 };
+                div.onmouseout = () => clearRangeHighlight();
 
-                div.onmouseout = () => {
-                    clearRangeHighlight();
-                };
-
+                const thumbHtml = getThumbnailHtml(file, fileExt, icon);
                 div.innerHTML = `
-                    <div class="flex items-center gap-2 flex-1">
+                    <div class="flex items-center gap-3 flex-1 min-w-0">
                         <input type="checkbox" ${isSelected ? 'checked' : ''} 
                                onclick="event.stopPropagation(); handleFileClick('${file}', ${index}, event)" 
-                               class="w-4 h-4 text-gray-600 rounded focus:ring-2 focus:ring-gray-500 cursor-pointer">
-                        <i data-feather="${getFileIcon(fileExt)}" class="w-5 h-5 text-gray-600"></i>
-                        <span class="text-gray-700 text-sm truncate">${fileName}</span>
+                               class="w-4 h-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500 cursor-pointer flex-shrink-0">
+                        ${thumbHtml}
+                        <span class="text-gray-900 text-sm font-medium truncate">${fileName}</span>
                     </div>
-                    <div class="flex gap-1">
+                    <div class="flex items-center gap-0.5 flex-shrink-0">
+                        <button type="button" data-file="${escapeHtml(file).replace(/"/g, '&quot;')}" onclick="event.stopPropagation(); openFilePreview(this.getAttribute('data-file'))" 
+                                class="action-btn text-gray-500 hover:text-primary-600 hover:bg-primary-50" 
+                                title="Preview">
+                            <i data-feather="eye" class="w-4 h-4"></i>
+                        </button>
                         <button onclick="event.stopPropagation(); getFileUrl('${file}')" 
-                                class="action-btn text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded transition" 
-                                title="Get URL">
+                                class="action-btn text-gray-500 hover:text-gray-700 hover:bg-gray-100" 
+                                title="Copy URL">
                             <i data-feather="link" class="w-4 h-4"></i>
                         </button>
                         <button onclick="event.stopPropagation(); deleteFile('${file}')" 
-                                class="action-btn text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition" 
+                                class="action-btn text-gray-500 hover:text-red-600 hover:bg-red-50" 
                                 title="Delete">
                             <i data-feather="trash-2" class="w-4 h-4"></i>
                         </button>
@@ -603,13 +797,13 @@
             // Update select all button
             const selectAllBtn = document.getElementById('select-all-btn');
             if (allSelected) {
-                selectAllBtn.innerHTML = '<i data-feather="check-square" class="w-4 h-4 inline mr-1"></i>All Selected';
-                selectAllBtn.classList.add('bg-gray-800', 'hover:bg-gray-900');
-                selectAllBtn.classList.remove('bg-gray-600', 'hover:bg-gray-700');
+                selectAllBtn.innerHTML = '<i data-feather="check-square" class="w-4 h-4"></i><span>Deselect all</span>';
+                selectAllBtn.classList.add('bg-primary-50', 'border-primary-200', 'text-primary-700');
+                selectAllBtn.classList.remove('bg-white', 'border-gray-300', 'text-gray-700');
             } else {
-                selectAllBtn.innerHTML = '<i data-feather="check-square" class="w-4 h-4 inline mr-1"></i>Select All';
-                selectAllBtn.classList.remove('bg-gray-800', 'hover:bg-gray-900');
-                selectAllBtn.classList.add('bg-gray-600', 'hover:bg-gray-700');
+                selectAllBtn.innerHTML = '<i data-feather="check-square" class="w-4 h-4"></i><span>Select All</span>';
+                selectAllBtn.classList.remove('bg-primary-50', 'border-primary-200', 'text-primary-700');
+                selectAllBtn.classList.add('bg-white', 'border-gray-300', 'text-gray-700');
             }
             refreshIcons();
             selectAllBtn.classList.toggle('hidden', !hasFiles);
@@ -753,8 +947,8 @@
 
         function getFileIcon(ext) {
             const icons = {
-                'jpg': 'image', 'jpeg': 'image', 'png': 'image', 'gif': 'image', 'svg': 'image',
-                'mp4': 'video', 'avi': 'video', 'mov': 'video', 'mkv': 'video',
+                'jpg': 'image', 'jpeg': 'image', 'png': 'image', 'gif': 'image', 'svg': 'image', 'webp': 'image',
+                'mp4': 'video', 'avi': 'video', 'mov': 'video', 'mkv': 'video', 'webm': 'video',
                 'mp3': 'music', 'wav': 'music', 'flac': 'music',
                 'pdf': 'file-text', 'doc': 'file-text', 'docx': 'file-text', 'txt': 'file-text',
                 'json': 'code', 'xml': 'code', 'csv': 'table',
@@ -763,17 +957,153 @@
             return icons[ext] || 'file';
         }
 
+        const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'];
+        const VIDEO_EXTS = ['mp4', 'webm', 'avi', 'mov', 'mkv', 'm4v'];
+
+        function getThumbnailHtml(file, fileExt, icon) {
+            const url = thumbnailUrls[file];
+            const safeUrl = url ? url.replace(/&/g, '&amp;').replace(/"/g, '&quot;') : '';
+            const isImage = IMAGE_EXTS.includes(fileExt);
+            const isVideo = VIDEO_EXTS.includes(fileExt);
+
+            if (isImage && safeUrl) {
+                return `<span class="w-10 h-10 rounded-lg overflow-hidden flex items-center justify-center flex-shrink-0 bg-gray-100">
+                    <img src="${safeUrl}" alt="" class="w-full h-full object-cover" 
+                         onerror="this.style.display='none';this.nextElementSibling.classList.remove('hidden');"
+                         crossorigin="anonymous" referrerpolicy="no-referrer">
+                    <span class="w-full h-full hidden items-center justify-center bg-gray-100"><i data-feather="image" class="w-5 h-5 text-gray-500"></i></span>
+                </span>`;
+            }
+            if (isVideo && safeUrl) {
+                return `<span class="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 bg-gray-900 relative flex items-center justify-center">
+                    <video src="${safeUrl}" preload="metadata" muted playsinline class="w-full h-full object-cover absolute inset-0"
+                           onloadeddata="this.currentTime=0.1"
+                           onerror="this.style.display='none';this.nextElementSibling.classList.remove('hidden');">
+                    </video>
+                    <span class="absolute inset-0 flex items-center justify-center text-white pointer-events-none hidden"><i data-feather="play" class="w-5 h-5"></i></span>
+                </span>`;
+            }
+            return `<span class="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
+                <i data-feather="${icon}" class="w-5 h-5 text-gray-500"></i>
+            </span>`;
+        }
+
         // Upload files
         let selectedFilesForUpload = [];
         let selectedFoldersForUpload = [];
 
-        // Initialize upload modal
+        // Initialize upload modal and drag-and-drop
         document.addEventListener('DOMContentLoaded', () => {
-            // File input handler
             document.getElementById('file-input').addEventListener('change', handleFileSelection);
-            // Folder input handler
             document.getElementById('folder-input').addEventListener('change', handleFolderSelection);
+
+            const dropZone = document.getElementById('upload-drop-zone');
+            if (dropZone) {
+                dropZone.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dropZone.classList.add('border-2', 'border-primary-400', 'border-dashed', 'bg-primary-50/80');
+                });
+                dropZone.addEventListener('dragleave', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (!dropZone.contains(e.relatedTarget)) {
+                        dropZone.classList.remove('border-2', 'border-primary-400', 'border-dashed', 'bg-primary-50/80');
+                    }
+                });
+                dropZone.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dropZone.classList.remove('border-2', 'border-primary-400', 'border-dashed', 'bg-primary-50/80');
+                    handleDrop(e.dataTransfer);
+                });
+            }
         });
+
+        async function readDirectoryEntries(entry, path = '') {
+            const results = [];
+            if (!entry.createReader) return results;
+            const dirReader = entry.createReader();
+            const read = () => new Promise((resolve, reject) => {
+                dirReader.readEntries(resolve, reject);
+            });
+            let entries = await read();
+            while (entries.length > 0) {
+                for (const e of entries) {
+                    const fullPath = path ? path + '/' + e.name : e.name;
+                    if (e.isFile) {
+                        const file = await new Promise((res, rej) => e.file(res, rej));
+                        results.push({ file, path: fullPath });
+                    } else if (e.isDirectory) {
+                        const sub = await readDirectoryEntries(e, fullPath);
+                        results.push(...sub);
+                    }
+                }
+                entries = await read();
+            }
+            return results;
+        }
+
+        function buildFolderTreeFromPaths(items) {
+            const root = {};
+            items.forEach(({ file, path }) => {
+                const parts = path.split('/');
+                let current = root;
+                for (let i = 0; i < parts.length - 1; i++) {
+                    const name = parts[i];
+                    if (!current[name]) current[name] = {};
+                    current = current[name];
+                }
+                current[parts[parts.length - 1]] = file;
+            });
+            return root;
+        }
+
+        async function handleDrop(dataTransfer) {
+            if (!dataTransfer || (!dataTransfer.files && !dataTransfer.items)) return;
+            const hasItems = dataTransfer.items && dataTransfer.items.length > 0;
+            const collected = [];
+
+            if (hasItems && dataTransfer.items[0].webkitGetAsEntry) {
+                for (let i = 0; i < dataTransfer.items.length; i++) {
+                    const item = dataTransfer.items[i];
+                    if (item.kind !== 'file') continue;
+                    const entry = item.webkitGetAsEntry();
+                    if (!entry) {
+                        const file = item.getAsFile();
+                        if (file) collected.push({ file, path: file.name });
+                        continue;
+                    }
+                    if (entry.isFile) {
+                        const file = await new Promise((res, rej) => entry.file(res, rej));
+                        collected.push({ file, path: entry.fullPath ? entry.fullPath.replace(/^\//, '') : entry.name });
+                    } else if (entry.isDirectory) {
+                        const sub = await readDirectoryEntries(entry, entry.name);
+                        collected.push(...sub);
+                    }
+                }
+            } else {
+                const files = dataTransfer.files;
+                if (files) {
+                    for (let i = 0; i < files.length; i++) {
+                        collected.push({ file: files[i], path: files[i].name });
+                    }
+                }
+            }
+
+            if (collected.length === 0) return;
+
+            const hasNestedPaths = collected.some(({ path }) => path.includes('/'));
+            if (hasNestedPaths) {
+                selectedFilesForUpload = [];
+                selectedFoldersForUpload = buildFolderTreeFromPaths(collected);
+            } else {
+                selectedFilesForUpload = collected.map(({ file }) => file);
+                selectedFoldersForUpload = {};
+            }
+            document.getElementById('selected-items').classList.remove('hidden');
+            displaySelectedItems();
+        }
 
         function handleFileSelection(event) {
             const files = Array.from(event.target.files);
@@ -1013,12 +1343,16 @@
             const uploadBtn = document.getElementById('upload-btn');
             const progressContainer = document.getElementById('upload-progress');
             const progressBar = document.getElementById('progress-bar');
+            const progressDetail = document.getElementById('upload-progress-detail');
+            const progressPct = document.getElementById('upload-progress-pct');
             const selectedItemsContainer = document.getElementById('selected-items');
 
             uploadBtn.disabled = true;
             uploadBtn.innerHTML = '<i data-feather="loader" class="w-4 h-4 inline mr-1 animate-spin"></i>Uploading...';
             progressContainer.classList.remove('hidden');
             progressBar.style.width = '0%';
+            if (progressDetail) progressDetail.textContent = '';
+            if (progressPct) progressPct.textContent = '0%';
 
             // Disable selected items during upload
             if (selectedItemsContainer) {
@@ -1028,6 +1362,39 @@
 
             let uploadedCount = 0;
             const totalFiles = allFiles.length;
+            const totalUploadBytes = allFiles.reduce((sum, f) => sum + (f.size || 0), 0);
+            if (progressDetail) progressDetail.textContent = `0 of ${totalFiles} files`;
+
+            const speedEl = document.getElementById('upload-speed');
+            const etaEl = document.getElementById('upload-eta');
+            if (speedEl) speedEl.textContent = '—';
+            if (etaEl) etaEl.textContent = '—';
+            let lastBytes = 0;
+            let lastTime = Date.now();
+            let smoothPct = 0;
+            let targetPct = 0;
+            let rafId = null;
+
+            function formatSpeed(bytesPerSec) {
+                if (bytesPerSec >= 1e9) return (bytesPerSec / 1e9).toFixed(1) + ' GB/s';
+                if (bytesPerSec >= 1e6) return (bytesPerSec / 1e6).toFixed(1) + ' MB/s';
+                if (bytesPerSec >= 1e3) return (bytesPerSec / 1e3).toFixed(1) + ' KB/s';
+                return bytesPerSec.toFixed(0) + ' B/s';
+            }
+            function formatETA(sec) {
+                if (!isFinite(sec) || sec < 0 || sec > 86400) return '';
+                if (sec < 60) return (Math.round(sec) || 1) + ' sec left';
+                if (sec < 3600) return 'About ' + Math.round(sec / 60) + ' min left';
+                return 'About ' + (sec / 3600).toFixed(1) + ' hr left';
+            }
+
+            function smoothTick() {
+                smoothPct += (targetPct - smoothPct) * 0.2;
+                if (Math.abs(smoothPct - targetPct) < 0.3) smoothPct = targetPct;
+                progressBar.style.width = smoothPct.toFixed(1) + '%';
+                if (progressPct) progressPct.textContent = Math.round(smoothPct) + '%';
+                if (smoothPct < targetPct - 0.1 || smoothPct > targetPct + 0.1) rafId = requestAnimationFrame(smoothTick);
+            }
 
             try {
                 // For folder uploads, first create all necessary folders
@@ -1060,17 +1427,50 @@
                     filesByFolder.get(targetFolder).push({ file, fileName });
                 }
 
-                // Upload files in batches grouped by folder
-                const batchSize = 10; // Upload up to 10 files per request
+                // Upload files in batches with live progress (smooth bar, speed, ETA)
+                const batchSize = 10;
+                let completedBatchBytes = 0;
+
+                function updateProgress(completedFiles, batchProgress, batchLen, bytesUploadedSoFar) {
+                    const total = completedFiles + batchProgress * batchLen;
+                    const pct = Math.min(99, (total / totalFiles) * 100);
+                    const filesDone = Math.min(totalFiles, Math.floor(total));
+                    targetPct = pct;
+                    if (rafId == null) rafId = requestAnimationFrame(smoothTick);
+
+                    if (progressDetail) progressDetail.textContent = `${filesDone} of ${totalFiles} files`;
+
+                    const now = Date.now();
+                    const timeDelta = (now - lastTime) / 1000;
+                    if (timeDelta >= 0.2 && bytesUploadedSoFar > lastBytes) {
+                        const speed = (bytesUploadedSoFar - lastBytes) / timeDelta;
+                        lastBytes = bytesUploadedSoFar;
+                        lastTime = now;
+                        if (speedEl) speedEl.textContent = formatSpeed(speed);
+                        const remaining = totalUploadBytes - bytesUploadedSoFar;
+                        if (speed > 0 && remaining > 0 && totalUploadBytes > 0 && etaEl) etaEl.textContent = formatETA(remaining / speed);
+                    }
+                }
 
                 for (const [targetFolder, fileList] of filesByFolder) {
                     for (let i = 0; i < fileList.length; i += batchSize) {
                         const batch = fileList.slice(i, i + batchSize);
-                        await uploadBatch(batch, targetFolder);
+                        const batchBytes = batch.reduce((sum, { file }) => sum + (file.size || 0), 0);
+                        await uploadBatchWithProgress(batch, targetFolder, (batchProgress) => {
+                            const bytesSoFar = completedBatchBytes + batchProgress * batchBytes;
+                            updateProgress(uploadedCount, batchProgress, batch.length, bytesSoFar);
+                        }, batchBytes);
 
+                        completedBatchBytes += batchBytes;
                         uploadedCount += batch.length;
-                        const progress = (uploadedCount / totalFiles) * 100;
-                        progressBar.style.width = `${progress}%`;
+                        targetPct = Math.round((uploadedCount / totalFiles) * 100);
+                        smoothPct = targetPct;
+                        if (rafId != null) cancelAnimationFrame(rafId);
+                        rafId = null;
+                        progressBar.style.width = targetPct + '%';
+                        if (progressDetail) progressDetail.textContent = `${uploadedCount} of ${totalFiles} files`;
+                        if (progressPct) progressPct.textContent = targetPct + '%';
+                        if (etaEl) etaEl.textContent = uploadedCount === totalFiles ? 'Complete' : '';
                     }
                 }
 
@@ -1164,23 +1564,45 @@
             }
         }
 
-        async function uploadBatch(fileObjects, targetFolder) {
-            const formData = new FormData();
-            formData.append('folder', targetFolder);
+        function uploadBatchWithProgress(fileObjects, targetFolder, onProgress, totalBytesKnown) {
+            return new Promise((resolve, reject) => {
+                const formData = new FormData();
+                formData.append('folder', targetFolder);
+                fileObjects.forEach(({ file, fileName }) => {
+                    formData.append('files', file, fileName);
+                });
 
-            fileObjects.forEach(({ file, fileName }) => {
-                formData.append('files', file, fileName);
+                const xhr = new XMLHttpRequest();
+
+                xhr.upload.addEventListener('progress', (e) => {
+                    if (typeof onProgress !== 'function') return;
+                    let ratio = 0;
+                    if (e.lengthComputable && e.total > 0) {
+                        ratio = e.loaded / e.total;
+                    } else if (totalBytesKnown > 0 && e.loaded > 0) {
+                        ratio = Math.min(1, e.loaded / totalBytesKnown);
+                    }
+                    onProgress(ratio);
+                });
+
+                xhr.addEventListener('load', () => {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        resolve();
+                    } else {
+                        let message = 'Upload failed';
+                        try {
+                            const result = JSON.parse(xhr.responseText);
+                            if (result.error) message = result.error;
+                        } catch (_) {}
+                        reject(new Error(message));
+                    }
+                });
+                xhr.addEventListener('error', () => reject(new Error('Network error')));
+                xhr.addEventListener('abort', () => reject(new Error('Upload aborted')));
+
+                xhr.open('POST', '/upload-files');
+                xhr.send(formData);
             });
-
-            const response = await fetch('/upload-files', {
-                method: 'POST',
-                body: formData
-            });
-
-            if (!response.ok) {
-                const result = await response.json();
-                throw new Error(result.error || 'Upload failed');
-            }
         }
 
         function flattenFolderStructure(structure, path = '') {
@@ -1626,6 +2048,63 @@
             }
         }
 
+        const PREVIEW_IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'];
+        const PREVIEW_VIDEO_EXTS = ['mp4', 'webm', 'avi', 'mov', 'mkv', 'm4v'];
+        const PREVIEW_AUDIO_EXTS = ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'];
+        const PREVIEW_PDF_EXTS = ['pdf'];
+
+        function getFileExt(fileKey) {
+            const name = fileKey.split('/').pop() || '';
+            return name.split('.').pop().toLowerCase();
+        }
+
+        function closePreviewModal() {
+            document.getElementById('preview-modal').classList.remove('active');
+            document.getElementById('preview-download-link').classList.add('hidden');
+        }
+
+        async function openFilePreview(fileKey) {
+            const modal = document.getElementById('preview-modal');
+            const titleEl = document.getElementById('preview-modal-title');
+            const bodyEl = document.getElementById('preview-modal-body');
+            const downloadLink = document.getElementById('preview-download-link');
+            const fileName = fileKey.split('/').pop() || fileKey;
+            titleEl.textContent = fileName;
+            bodyEl.innerHTML = '<p class="text-sm text-gray-500">Loading…</p>';
+            modal.classList.add('active');
+            downloadLink.classList.add('hidden');
+
+            try {
+                const res = await fetch(`/get-file-url?key=${encodeURIComponent(fileKey)}&expires=3600`);
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    bodyEl.innerHTML = '<p class="text-sm text-red-600">' + escapeHtml(err.error || 'Failed to load') + '</p>';
+                    return;
+                }
+                const { url } = await res.json();
+                const ext = getFileExt(fileKey);
+
+                downloadLink.href = url;
+                downloadLink.download = fileName;
+                downloadLink.classList.remove('hidden');
+
+                if (PREVIEW_IMAGE_EXTS.includes(ext)) {
+                    bodyEl.innerHTML = '<img src="' + escapeHtml(url) + '" alt="" class="max-w-full max-h-full object-contain" style="max-height: calc(90vh - 120px);" onerror="this.parentElement.innerHTML=\'<p class=text-red-600>Failed to load image</p>\'">';
+                } else if (PREVIEW_VIDEO_EXTS.includes(ext)) {
+                    bodyEl.innerHTML = '<video src="' + escapeHtml(url) + '" controls class="max-w-full max-h-full" style="max-height: calc(90vh - 120px);" preload="metadata"></video>';
+                } else if (PREVIEW_AUDIO_EXTS.includes(ext)) {
+                    bodyEl.innerHTML = '<div class="flex flex-col items-center gap-4"><audio src="' + escapeHtml(url) + '" controls preload="metadata" class="max-w-md"></audio><p class="text-sm text-gray-500">' + escapeHtml(fileName) + '</p></div>';
+                } else if (PREVIEW_PDF_EXTS.includes(ext)) {
+                    bodyEl.innerHTML = '<iframe src="' + escapeHtml(url) + '" class="w-full border-0 rounded-lg" style="height: calc(90vh - 120px); min-height: 400px;" title="PDF"></iframe>';
+                } else {
+                    bodyEl.innerHTML = '<div class="text-center"><p class="text-sm text-gray-600 mb-4">No preview for this file type.</p><a href="' + escapeHtml(url) + '" download="' + escapeHtml(fileName) + '" class="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition"><i data-feather="download" class="w-4 h-4"></i> Download</a></div>';
+                }
+                refreshIcons();
+            } catch (e) {
+                bodyEl.innerHTML = '<p class="text-sm text-red-600">' + escapeHtml(e.message || 'Failed to load preview') + '</p>';
+            }
+        }
+
         // Get file URL
         async function getFileUrl(file) {
             const folder = file.substring(0, file.lastIndexOf('/'));
@@ -1685,6 +2164,7 @@
         const originalLoadCurrentFolder = loadCurrentFolder;
         loadCurrentFolder = async function () {
             await originalLoadCurrentFolder();
+            updateCurrentBucketLabel();
             setTimeout(refreshIcons, 10);
         };
     </script>
