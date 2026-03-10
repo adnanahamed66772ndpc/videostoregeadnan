@@ -1,6 +1,6 @@
 const express = require("express");
 const bodyParser = require("body-parser");
-const session = require("express-session");
+const cookieParser = require("cookie-parser");
 const cors = require("cors");
 const path = require("path");
 const fs = require("fs");
@@ -8,30 +8,73 @@ const multer = require("multer");
 const { initDb, loadBucketsConfig, runAndPersist, getOne, getAll } = require("./lib/db");
 const { S3Client, PutObjectCommand, DeleteObjectCommand, DeleteObjectsCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, CopyObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
+const crypto = require("crypto");
 
 const app = express();
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(cors({ origin: true, credentials: true }));
-app.use(session({
-    secret: "r2-file-manager-session-secret",
-    resave: false,
-    saveUninitialized: false,
-    cookie: { httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000, sameSite: "lax" }
-}));
+app.use(cookieParser());
 
-const LOGIN_USER = "admin";
-const LOGIN_PASS = "Adnan2020";
+const LOGIN_USER = process.env.LOGIN_USER || "admin";
+const LOGIN_PASS = process.env.LOGIN_PASS || "Adnan2020";
+const AUTH_SECRET = process.env.AUTH_SECRET || process.env.SESSION_SECRET || "r2-file-manager-auth-secret";
+const AUTH_COOKIE = "r2fm_auth";
+const AUTH_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+function signAuth(username, issuedAt) {
+    return crypto.createHmac("sha256", AUTH_SECRET).update(`${username}|${issuedAt}`).digest("hex");
+}
+
+function parseAuthCookie(value) {
+    if (!value || typeof value !== "string") return null;
+    const parts = value.split(".");
+    if (parts.length !== 3) return null;
+    const [uB64, issuedAtStr, sig] = parts;
+    const issuedAt = Number(issuedAtStr);
+    if (!Number.isFinite(issuedAt)) return null;
+    let username = "";
+    try {
+        username = Buffer.from(uB64, "base64url").toString("utf8");
+    } catch {
+        return null;
+    }
+    if (!username) return null;
+    const expected = signAuth(username, issuedAtStr);
+    const ok = crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+    if (!ok) return null;
+    if (Date.now() - issuedAt > AUTH_TTL_MS) return null;
+    return { username, issuedAt };
+}
+
+function setAuthCookie(res, username) {
+    const issuedAt = Date.now().toString();
+    const uB64 = Buffer.from(username, "utf8").toString("base64url");
+    const sig = signAuth(username, issuedAt);
+    const value = `${uB64}.${issuedAt}.${sig}`;
+    const secure = String(process.env.NODE_ENV || "").toLowerCase() === "production";
+    res.cookie(AUTH_COOKIE, value, { httpOnly: true, sameSite: "lax", secure, maxAge: AUTH_TTL_MS, path: "/" });
+}
+
+function clearAuthCookie(res) {
+    res.clearCookie(AUTH_COOKIE, { path: "/" });
+}
+
+function getAuthedUser(req) {
+    const v = req.cookies ? req.cookies[AUTH_COOKIE] : null;
+    const parsed = parseAuthCookie(v);
+    return parsed ? parsed.username : null;
+}
 
 function requireAuth(req, res, next) {
     const isLoginPage = req.path === "/login";
     const isLogout = req.path === "/logout";
-    const hasSession = req.session && req.session.user;
+    const user = getAuthedUser(req);
 
     if (isLogout) return next();
     if (isLoginPage && req.method === "GET") return next();
     if (isLoginPage && req.method === "POST") return next();
-    if (hasSession) return next();
+    if (user) return next();
 
     if (req.xhr || (req.headers.accept && String(req.headers.accept).indexOf("application/json") !== -1)) {
         return res.status(401).json({ error: "Unauthorized" });
@@ -41,7 +84,7 @@ function requireAuth(req, res, next) {
 app.use(requireAuth);
 
 app.get("/login", (req, res) => {
-    if (req.session && req.session.user) return res.redirect("/");
+    if (getAuthedUser(req)) return res.redirect("/");
     res.sendFile(path.join(__dirname, "templates/login.html"));
 });
 
@@ -49,20 +92,20 @@ app.post("/login", (req, res) => {
     const username = (req.body.username || "").trim();
     const password = req.body.password || "";
     if (username === LOGIN_USER && password === LOGIN_PASS) {
-        req.session.user = username;
+        setAuthCookie(res, username);
         return res.redirect("/");
     }
     res.redirect("/login?error=1");
 });
 
 app.get("/logout", (req, res) => {
-    req.session.destroy(() => {});
+    clearAuthCookie(res);
     res.redirect("/login");
 });
 
 app.get("/api/auth-check", (req, res) => {
     res.setHeader("Content-Type", "application/json");
-    res.status(200).json({ ok: true, user: req.session.user });
+    res.status(200).json({ ok: true, user: getAuthedUser(req) });
 });
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -515,18 +558,20 @@ app.get("/get-file-urls", async (req, res) => {
     }
 });
 
-// Start server (init SQLite before accepting connections)
-const PORT = 3000;
-(async () => {
-    try {
-        await initDb();
-        app.listen(PORT, () => {
-            console.log(`Server is running on port ${PORT}`);
-        });
-    } catch (err) {
-        console.error("Failed to start server:", err);
-        process.exit(1);
-    }
-})();
-
 module.exports = app;
+
+// Start server only when run locally (not on Vercel serverless)
+if (require.main === module) {
+    const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
+    (async () => {
+        try {
+            await initDb();
+            app.listen(PORT, () => {
+                console.log(`Server is running on port ${PORT}`);
+            });
+        } catch (err) {
+            console.error("Failed to start server:", err);
+            process.exit(1);
+        }
+    })();
+}
